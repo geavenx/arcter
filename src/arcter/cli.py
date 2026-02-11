@@ -158,6 +158,18 @@ def _format_transaction_amount(amount: Decimal, transaction_type: str) -> str:
     return f"{sign}{quantized:,.2f}"
 
 
+def _signed_transaction_amount(amount: Decimal, transaction_type: str) -> Decimal:
+    if transaction_type.strip().upper() == "CREDIT":
+        return abs(amount)
+    return -abs(amount)
+
+
+def _format_total_amount(value: Decimal) -> str:
+    sign = "+" if value >= 0 else "-"
+    quantized = abs(value).quantize(Decimal("0.01"))
+    return f"{sign}{quantized:,.2f}"
+
+
 def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
     table_rows = [
         (
@@ -583,7 +595,12 @@ def account_transactions(
 
     displayed_rows = rows[:limit]
     _print_transaction_table(displayed_rows)
+    total_value = sum(
+        (_signed_transaction_amount(row.amount, row.type) for row in displayed_rows),
+        Decimal("0"),
+    )
     typer.echo("")
     typer.echo(f"Showing {len(displayed_rows)} of {len(rows)} transactions.")
     if len(displayed_rows) < len(rows):
         typer.echo("Use --limit to show more.")
+    typer.echo(f"TOTAL: {_format_total_amount(total_value)}")

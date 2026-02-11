@@ -963,6 +963,7 @@ def test_account_transactions_happy_path_shows_table(
     assert "-200.00" in result.stdout
     assert "PENDING" in result.stdout
     assert "Showing 3 of 3 transactions." in result.stdout
+    assert "TOTAL: +1,250.00" in result.stdout
 
 
 def test_account_transactions_passes_date_filter_options(
@@ -1156,6 +1157,7 @@ def test_account_transactions_filters_by_transaction_type(
     assert "+1,500.00" in result.stdout
     assert "-200.00" not in result.stdout
     assert "Showing 1 of 1 transactions." in result.stdout
+    assert "TOTAL: +1,500.00" in result.stdout
 
 
 def test_account_transactions_respects_limit_option(
@@ -1195,6 +1197,7 @@ def test_account_transactions_respects_limit_option(
     assert result.exit_code == 0
     assert "Showing 5 of 10 transactions." in result.stdout
     assert "Use --limit to show more." in result.stdout
+    assert "TOTAL: -50.00" in result.stdout
 
 
 def test_account_transactions_handles_no_transactions(
