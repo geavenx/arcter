@@ -14,10 +14,13 @@ from arcter.config import (
     user_config_path,
 )
 from arcter.constants import APP_NAME
+from arcter import pluggy
 
 app = typer.Typer(name=APP_NAME)
 config_app = typer.Typer(help="Manage CLI configuration values.")
+account_app = typer.Typer(help="Manage external account integrations.")
 app.add_typer(config_app, name="config")
+app.add_typer(account_app, name="account")
 
 
 class OutputFormat(str, Enum):
@@ -130,3 +133,21 @@ def config_path() -> None:
     Print the absolute user config file path.
     """
     typer.echo(user_config_path())
+
+
+@account_app.command("update")
+def account_update(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+) -> None:
+    """
+    Refresh a Pluggy item state.
+    """
+    try:
+        resolved_item_id = pluggy.update_item_with_env(item_id)
+    except pluggy.PluggyError as exc:
+        _exit_with_error(exc)
+
+    typer.echo(f"Updated Pluggy item {resolved_item_id}.")
