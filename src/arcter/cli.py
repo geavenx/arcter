@@ -33,8 +33,9 @@ def _exit_with_error(exc: Exception) -> None:
 
 def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
     rows = [
-        ("salary", values["salary"], sources["salary"]),
         ("currency", values["currency"], sources["currency"]),
+        ("salary", values["salary"], sources["salary"]),
+        ("savings_goal", values["savings_goal"], sources["salary"]),
     ]
     headers = ("Key", "Value", "Source")
     widths = [len(column) for column in headers]
