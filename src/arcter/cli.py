@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 
@@ -71,6 +72,81 @@ def _format_currency_amount(currency_code: str, value: Decimal) -> str:
 def _format_currency_amount_grouped(currency_code: str, value: Decimal) -> str:
     quantized = value.quantize(Decimal("0.01"))
     return f"{currency_code} {quantized:,.2f}"
+
+
+def _truncate_text(value: str, max_length: int = 20) -> str:
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 3]}..."
+
+
+def _validate_iso_date(value: str | None, option_name: str) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{option_name} must use YYYY-MM-DD format.")
+
+    try:
+        parsed = date.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{option_name} must use YYYY-MM-DD format.") from exc
+
+    if parsed.isoformat() != normalized:
+        raise ValueError(f"{option_name} must use YYYY-MM-DD format.")
+
+    return normalized
+
+
+def _normalize_account_type_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip().upper()
+    if normalized not in ("BANK", "CREDIT"):
+        raise ValueError("Option --type must be either 'bank' or 'credit'.")
+
+    return normalized
+
+
+def _format_transaction_amount(amount: Decimal, transaction_type: str) -> str:
+    sign = "+" if transaction_type == "CREDIT" else "-"
+    quantized = abs(amount).quantize(Decimal("0.01"))
+    return f"{sign}{quantized:,.2f}"
+
+
+def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
+    table_rows = [
+        (
+            row.date,
+            _truncate_text(row.account_name.strip() or "Unnamed account"),
+            row.type,
+            _format_transaction_amount(row.amount, row.type),
+            row.currency_code,
+            _truncate_text(row.category or ""),
+            row.status,
+        )
+        for row in rows
+    ]
+    headers = ("Date", "Account", "Type", "Amount", "Currency", "Category", "Status")
+    widths = [len(column) for column in headers]
+
+    for row in table_rows:
+        widths = [
+            max(current, len(value)) for current, value in zip(widths, row, strict=True)
+        ]
+
+    typer.echo(
+        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}  {headers[3]:<{widths[3]}}  {headers[4]:<{widths[4]}}  {headers[5]:<{widths[5]}}  {headers[6]:<{widths[6]}}"
+    )
+    typer.echo(
+        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}  {'-' * widths[4]}  {'-' * widths[5]}  {'-' * widths[6]}"
+    )
+    for row in table_rows:
+        typer.echo(
+            f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  {row[3]:<{widths[3]}}  {row[4]:<{widths[4]}}  {row[5]:<{widths[5]}}  {row[6]:<{widths[6]}}"
+        )
 
 
 def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
@@ -373,3 +449,72 @@ def account_goal(
     if salary > 0:
         estimated_months = (remaining / salary).quantize(Decimal("0.1"))
         typer.echo(f"  Estimated:  ~{estimated_months} months to reach goal")
+
+
+@account_app.command("transactions")
+def account_transactions(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+    date_from: str | None = typer.Option(
+        None,
+        "--from",
+        "-f",
+        help="Start date (YYYY-MM-DD).",
+    ),
+    date_to: str | None = typer.Option(
+        None,
+        "--to",
+        "-t",
+        help="End date (YYYY-MM-DD).",
+    ),
+    account_type: str | None = typer.Option(
+        None,
+        "--type",
+        help="Filter by account type: bank or credit.",
+    ),
+    limit: int = typer.Option(
+        50,
+        "--limit",
+        "-n",
+        help="Maximum number of transactions to display.",
+    ),
+) -> None:
+    """
+    List recent transactions for connected accounts.
+    """
+    try:
+        normalized_from = _validate_iso_date(date_from, "--from")
+        normalized_to = _validate_iso_date(date_to, "--to")
+        normalized_type = _normalize_account_type_filter(account_type)
+        if limit <= 0:
+            raise ValueError("Option --limit must be a positive integer.")
+    except ValueError as exc:
+        _exit_with_error(exc)
+
+    try:
+        rows = pluggy.list_item_transactions_with_env(
+            item_id,
+            date_from=normalized_from,
+            date_to=normalized_to,
+            account_type_filter=normalized_type,
+        )
+    except pluggy.PluggyError as exc:
+        _exit_with_error(exc)
+
+    if not rows:
+        if normalized_from or normalized_to:
+            from_label = normalized_from or "start"
+            to_label = normalized_to or "today"
+            typer.echo(f"No transactions found between {from_label} and {to_label}.")
+        else:
+            typer.echo("No transactions found for this Pluggy item.")
+        return
+
+    displayed_rows = rows[:limit]
+    _print_transaction_table(displayed_rows)
+    typer.echo("")
+    typer.echo(f"Showing {len(displayed_rows)} of {len(rows)} transactions.")
+    if len(displayed_rows) < len(rows):
+        typer.echo("Use --limit to show more.")

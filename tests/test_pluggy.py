@@ -384,3 +384,293 @@ def test_list_item_credit_cards_filters_non_credit_accounts(monkeypatch) -> None
 
     assert len(rows) == 1
     assert rows[0].name == "Credit card"
+
+
+def test_list_item_accounts_filters_bank_and_credit(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_request_json(
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        operation: str,
+        json_payload: dict[str, object] | None = None,
+        params: dict[str, object] | None = None,
+    ) -> object:
+        observed["method"] = method
+        observed["path"] = path
+        observed["operation"] = operation
+        observed["json_payload"] = json_payload
+        observed["params"] = params
+        return {
+            "results": [
+                {"id": "bank-1", "name": "Checking", "type": "BANK"},
+                {"id": "credit-1", "name": "Visa", "type": "CREDIT"},
+                {"id": "loan-1", "name": "Loan", "type": "LOAN"},
+                {"id": "bank-without-id", "name": "No Id", "type": "BANK"},
+            ]
+        }
+
+    monkeypatch.setattr(pluggy, "_request_json", fake_request_json)
+
+    rows = pluggy.list_item_accounts(item_id="item-id", api_key="api-key")
+
+    assert observed["method"] == "GET"
+    assert observed["path"] == "/accounts"
+    assert observed["operation"] == "accounts list"
+    assert observed["json_payload"] is None
+    assert observed["params"] == {"itemId": "item-id"}
+    assert rows == [
+        {"id": "bank-1", "name": "Checking", "type": "BANK"},
+        {"id": "credit-1", "name": "Visa", "type": "CREDIT"},
+        {"id": "bank-without-id", "name": "No Id", "type": "BANK"},
+    ]
+
+
+def test_list_account_transactions_passes_date_params(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_request_json(
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        operation: str,
+        json_payload: dict[str, object] | None = None,
+        params: dict[str, object] | None = None,
+    ) -> object:
+        observed["method"] = method
+        observed["path"] = path
+        observed["operation"] = operation
+        observed["json_payload"] = json_payload
+        observed["params"] = params
+        return {"totalPages": 1, "page": 1, "results": [{"id": "tx-1"}]}
+
+    monkeypatch.setattr(pluggy, "_request_json", fake_request_json)
+
+    rows = pluggy.list_account_transactions(
+        account_id="account-id",
+        api_key="api-key",
+        date_from="2026-01-01",
+        date_to="2026-01-31",
+    )
+
+    assert observed["method"] == "GET"
+    assert observed["path"] == "/transactions"
+    assert observed["operation"] == "transactions list"
+    assert observed["json_payload"] is None
+    assert observed["params"] == {
+        "accountId": "account-id",
+        "from": "2026-01-01",
+        "to": "2026-01-31",
+        "pageSize": 500,
+        "page": 1,
+    }
+    assert rows == [{"id": "tx-1"}]
+
+
+def test_list_account_transactions_handles_pagination(monkeypatch) -> None:
+    observed_pages: list[int] = []
+
+    def fake_request_json(
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        operation: str,
+        json_payload: dict[str, object] | None = None,
+        params: dict[str, object] | None = None,
+    ) -> object:
+        assert method == "GET"
+        assert path == "/transactions"
+        assert operation == "transactions list"
+        assert params is not None
+
+        page = int(params.get("page", 1))
+        observed_pages.append(page)
+        if page == 1:
+            return {
+                "totalPages": 2,
+                "page": 1,
+                "results": [{"id": "tx-1"}, {"id": "tx-2"}],
+            }
+        return {"totalPages": 2, "page": 2, "results": [{"id": "tx-3"}]}
+
+    monkeypatch.setattr(pluggy, "_request_json", fake_request_json)
+
+    rows = pluggy.list_account_transactions(account_id="account-id", api_key="api-key")
+
+    assert observed_pages == [1, 2]
+    assert rows == [{"id": "tx-1"}, {"id": "tx-2"}, {"id": "tx-3"}]
+
+
+def test_parse_transactions_extracts_fields() -> None:
+    raw_transactions = [
+        {
+            "id": "tx-1",
+            "description": " Grocery ",
+            "amount": "150.5",
+            "date": "2026-01-14T03:00:00.000Z",
+            "currencyCode": "brl",
+            "type": "debit",
+            "status": "posted",
+            "category": "Food",
+        }
+    ]
+
+    rows = pluggy._parse_transactions(
+        raw_transactions,
+        account_name="Checking",
+        account_type="BANK",
+    )
+
+    assert rows == [
+        pluggy.TransactionRow(
+            date="2026-01-14",
+            description="Grocery",
+            amount=Decimal("150.5"),
+            currency_code="BRL",
+            type="DEBIT",
+            status="POSTED",
+            category="Food",
+            account_name="Checking",
+            account_type="BANK",
+        )
+    ]
+
+
+def test_parse_transactions_skips_unparseable_amounts() -> None:
+    raw_transactions = [
+        {
+            "description": "Transfer",
+            "amount": "not-a-number",
+            "date": "2026-01-14T03:00:00.000Z",
+            "currencyCode": "BRL",
+            "type": "DEBIT",
+            "status": "POSTED",
+        },
+        {
+            "description": "Salary",
+            "amount": "2000.00",
+            "date": "2026-01-15T03:00:00.000Z",
+            "currencyCode": "BRL",
+            "type": "CREDIT",
+            "status": "POSTED",
+        },
+    ]
+
+    rows = pluggy._parse_transactions(
+        raw_transactions,
+        account_name="Checking",
+        account_type="BANK",
+    )
+
+    assert len(rows) == 1
+    assert rows[0].description == "Salary"
+    assert rows[0].amount == Decimal("2000.00")
+
+
+def test_parse_transactions_handles_missing_fields() -> None:
+    raw_transactions = [
+        {
+            "amount": "99.90",
+            "date": "",
+            "currencyCode": "",
+            "category": None,
+            "description": "  ",
+        }
+    ]
+
+    rows = pluggy._parse_transactions(
+        raw_transactions,
+        account_name="",
+        account_type="",
+    )
+
+    assert rows == [
+        pluggy.TransactionRow(
+            date="Unknown",
+            description="No description",
+            amount=Decimal("99.90"),
+            currency_code="N/A",
+            type="DEBIT",
+            status="POSTED",
+            category=None,
+            account_name="Unnamed account",
+            account_type="BANK",
+        )
+    ]
+
+
+def test_list_item_transactions_with_env_filters_by_account_type(
+    monkeypatch,
+) -> None:
+    observed: dict[str, object] = {"account_ids": []}
+
+    def fake_authenticate(client_id: str, client_secret: str) -> str:
+        observed["client_id"] = client_id
+        observed["client_secret"] = client_secret
+        return "api-key"
+
+    def fake_list_item_accounts(item_id: str, api_key: str) -> list[dict[str, str]]:
+        observed["item_id"] = item_id
+        observed["api_key"] = api_key
+        return [
+            {"id": "bank-1", "name": "Checking", "type": "BANK"},
+            {"id": "credit-1", "name": "Card", "type": "CREDIT"},
+        ]
+
+    def fake_list_account_transactions(
+        account_id: str,
+        api_key: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict[str, object]]:
+        observed_account_ids = observed["account_ids"]
+        assert isinstance(observed_account_ids, list)
+        observed_account_ids.append(account_id)
+
+        if account_id == "bank-1":
+            return [
+                {
+                    "description": "Salary",
+                    "amount": "1000",
+                    "date": "2026-01-15T00:00:00.000Z",
+                    "currencyCode": "BRL",
+                    "type": "CREDIT",
+                    "status": "POSTED",
+                }
+            ]
+        return [
+            {
+                "description": "Card charge",
+                "amount": "100",
+                "date": "2026-01-14T00:00:00.000Z",
+                "currencyCode": "BRL",
+                "type": "DEBIT",
+                "status": "POSTED",
+            }
+        ]
+
+    monkeypatch.setattr(pluggy, "authenticate", fake_authenticate)
+    monkeypatch.setattr(pluggy, "list_item_accounts", fake_list_item_accounts)
+    monkeypatch.setattr(
+        pluggy, "list_account_transactions", fake_list_account_transactions
+    )
+
+    rows = pluggy.list_item_transactions_with_env(
+        item_id=None,
+        account_type_filter="BANK",
+        env={
+            "PLUGGY_CLIENT_ID": "client-id",
+            "PLUGGY_CLIENT_SECRET": "client-secret",
+            "PLUGGY_ITEM_ID": "item-from-env",
+        },
+    )
+
+    assert observed["client_id"] == "client-id"
+    assert observed["client_secret"] == "client-secret"
+    assert observed["item_id"] == "item-from-env"
+    assert observed["api_key"] == "api-key"
+    assert observed["account_ids"] == ["bank-1"]
+    assert len(rows) == 1
+    assert rows[0].account_name == "Checking"
+    assert rows[0].account_type == "BANK"

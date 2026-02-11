@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from arcter.cli import app
 from arcter.config import Config, ConfigError
-from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError
+from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError, TransactionRow
 
 runner = CliRunner()
 
@@ -861,3 +861,284 @@ def test_account_credit_fails_when_item_id_is_missing(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "Missing Pluggy item ID." in output
     assert "PLUGGY_ITEM_ID" in output
+
+
+def test_account_transactions_happy_path_shows_table(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        observed["account_type_filter"] = account_type_filter
+        observed["env"] = env
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Pending txn",
+                amount=Decimal("50"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="PENDING",
+                category=None,
+                account_name="Visa Platinum",
+                account_type="CREDIT",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app, ["account", "transactions", "item-from-arg"], env=_env(tmp_path)
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] == "item-from-arg"
+    assert observed["date_from"] is None
+    assert observed["date_to"] is None
+    assert observed["account_type_filter"] is None
+    assert observed["env"] is None
+    assert "Date" in result.stdout
+    assert "Account" in result.stdout
+    assert "Type" in result.stdout
+    assert "Amount" in result.stdout
+    assert "Currency" in result.stdout
+    assert "Category" in result.stdout
+    assert "Status" in result.stdout
+    assert "+1,500.00" in result.stdout
+    assert "-200.00" in result.stdout
+    assert "PENDING" in result.stdout
+    assert "Showing 3 of 3 transactions." in result.stdout
+
+
+def test_account_transactions_passes_date_filter_options(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        observed["account_type_filter"] = account_type_filter
+        observed["env"] = env
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "transactions",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] is None
+    assert observed["date_from"] == "2026-01-01"
+    assert observed["date_to"] == "2026-01-31"
+    assert observed["account_type_filter"] is None
+    assert observed["env"] is None
+    assert "No transactions found between 2026-01-01 and 2026-01-31." in result.stdout
+
+
+def test_account_transactions_passes_account_type_filter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        observed["account_type_filter"] = account_type_filter
+        observed["env"] = env
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--type", "bank"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] is None
+    assert observed["account_type_filter"] == "BANK"
+    assert observed["date_from"] is None
+    assert observed["date_to"] is None
+    assert observed["env"] is None
+
+
+def test_account_transactions_respects_limit_option(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date=f"2026-01-{day:02d}",
+                description=f"Tx {day}",
+                amount=Decimal("10.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Misc",
+                account_name="Checking",
+                account_type="BANK",
+            )
+            for day in range(1, 11)
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app, ["account", "transactions", "--limit", "5"], env=_env(tmp_path)
+    )
+
+    assert result.exit_code == 0
+    assert "Showing 5 of 10 transactions." in result.stdout
+    assert "Use --limit to show more." in result.stdout
+
+
+def test_account_transactions_handles_no_transactions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "No transactions found for this Pluggy item." in result.stdout
+
+
+def test_account_transactions_rejects_invalid_date_format(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--from", "2026/01/01"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "--from must use YYYY-MM-DD format." in output
+
+
+def test_account_transactions_propagates_pluggy_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        raise PluggyError(
+            "Pluggy transactions list failed with status 500: Internal Error"
+        )
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Pluggy transactions list failed with status 500: Internal Error" in output
+
+
+def test_account_transactions_fails_when_credentials_are_missing(
+    tmp_path: Path,
+) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "item-id"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Missing required environment variables:" in output
+    assert "PLUGGY_CLIENT_ID" in output
+    assert "PLUGGY_CLIENT_SECRET" in output

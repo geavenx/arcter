@@ -39,6 +39,19 @@ class CreditCardRow:
     holder_type: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class TransactionRow:
+    date: str
+    description: str
+    amount: Decimal
+    currency_code: str
+    type: str
+    status: str
+    category: str | None
+    account_name: str
+    account_type: str
+
+
 def _sanitize(value: str | None) -> str:
     if value is None:
         return ""
@@ -336,6 +349,166 @@ def list_item_credit_cards(item_id: str, api_key: str) -> list[CreditCardRow]:
     return rows
 
 
+def list_item_accounts(item_id: str, api_key: str) -> list[dict[str, str]]:
+    payload = _request_json(
+        method="GET",
+        path="/accounts",
+        headers={"accept": "application/json", "X-API-KEY": api_key},
+        operation="accounts list",
+        params={"itemId": item_id},
+    )
+    accounts = _extract_account_entries(payload)
+
+    rows: list[dict[str, str]] = []
+    for account in accounts:
+        account_type_raw = account.get("type")
+        account_type = (
+            account_type_raw.strip().upper()
+            if isinstance(account_type_raw, str)
+            else str(account_type_raw or "").strip().upper()
+        )
+        if account_type not in ("BANK", "CREDIT"):
+            continue
+
+        account_id_raw = account.get("id")
+        account_id = account_id_raw.strip() if isinstance(account_id_raw, str) else ""
+        if not account_id:
+            continue
+
+        name_raw = account.get("name")
+        name = name_raw.strip() if isinstance(name_raw, str) else ""
+        if not name:
+            name = "Unnamed account"
+
+        rows.append({"id": account_id, "name": name, "type": account_type})
+
+    return rows
+
+
+def _extract_transaction_entries(payload: Any) -> tuple[list[Mapping[str, Any]], int]:
+    if not isinstance(payload, Mapping):
+        raise PluggyError(
+            "Pluggy transactions list returned an invalid payload format."
+        )
+
+    entries = payload.get("results")
+    if not isinstance(entries, list):
+        raise PluggyError(
+            "Pluggy transactions list returned an invalid payload format."
+        )
+    if not all(isinstance(entry, Mapping) for entry in entries):
+        raise PluggyError("Pluggy transactions list returned malformed entries.")
+
+    total_pages_raw = payload.get("totalPages", 1)
+    try:
+        total_pages = int(total_pages_raw)
+    except (TypeError, ValueError):
+        total_pages = 1
+    if total_pages < 1:
+        total_pages = 1
+
+    return [entry for entry in entries if isinstance(entry, Mapping)], total_pages
+
+
+def list_account_transactions(
+    account_id: str,
+    api_key: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict[str, Any]]:
+    base_params: dict[str, Any] = {"accountId": account_id, "pageSize": 500}
+    if date_from:
+        base_params["from"] = date_from
+    if date_to:
+        base_params["to"] = date_to
+
+    rows: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        params = {**base_params, "page": page}
+        payload = _request_json(
+            method="GET",
+            path="/transactions",
+            headers={"accept": "application/json", "X-API-KEY": api_key},
+            operation="transactions list",
+            params=params,
+        )
+        entries, total_pages = _extract_transaction_entries(payload)
+        rows.extend(dict(entry) for entry in entries)
+
+        if page >= total_pages:
+            break
+        page += 1
+
+    return rows
+
+
+def _parse_transactions(
+    raw_transactions: list[dict[str, Any]],
+    account_name: str,
+    account_type: str,
+) -> list[TransactionRow]:
+    normalized_account_name = account_name.strip() or "Unnamed account"
+    normalized_account_type = account_type.strip().upper() or "BANK"
+
+    rows: list[TransactionRow] = []
+    for transaction in raw_transactions:
+        raw_date = transaction.get("date")
+        if isinstance(raw_date, str) and raw_date.strip():
+            date = raw_date.strip().split("T", maxsplit=1)[0]
+        else:
+            date = "Unknown"
+
+        raw_description = transaction.get("description")
+        description = (
+            raw_description.strip() if isinstance(raw_description, str) else ""
+        )
+        if not description:
+            description = "No description"
+
+        amount = _parse_balance(transaction.get("amount"))
+        if amount is None:
+            continue
+
+        raw_currency = transaction.get("currencyCode")
+        currency_code = (
+            raw_currency.strip().upper() if isinstance(raw_currency, str) else ""
+        )
+        if not currency_code:
+            currency_code = "N/A"
+
+        raw_type = transaction.get("type")
+        transaction_type = raw_type.strip().upper() if isinstance(raw_type, str) else ""
+        if not transaction_type:
+            transaction_type = "DEBIT"
+
+        raw_status = transaction.get("status")
+        status = raw_status.strip().upper() if isinstance(raw_status, str) else ""
+        if not status:
+            status = "POSTED"
+
+        raw_category = transaction.get("category")
+        category = raw_category.strip() if isinstance(raw_category, str) else None
+        if category == "":
+            category = None
+
+        rows.append(
+            TransactionRow(
+                date=date,
+                description=description,
+                amount=amount,
+                currency_code=currency_code,
+                type=transaction_type,
+                status=status,
+                category=category,
+                account_name=normalized_account_name,
+                account_type=normalized_account_type,
+            )
+        )
+
+    return rows
+
+
 def update_item_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
@@ -365,3 +538,46 @@ def list_item_credit_cards_with_env(
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
     return list_item_credit_cards(resolved_item_id, api_key)
+
+
+def list_item_transactions_with_env(
+    item_id: str | None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    account_type_filter: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[TransactionRow]:
+    resolved_item_id = resolve_item_id(item_id, env=env)
+    client_id, client_secret = resolve_credentials(env=env)
+    api_key = authenticate(client_id, client_secret)
+
+    accounts = list_item_accounts(resolved_item_id, api_key)
+    normalized_filter = (
+        account_type_filter.strip().upper()
+        if isinstance(account_type_filter, str)
+        else None
+    )
+    if normalized_filter:
+        accounts = [row for row in accounts if row["type"] == normalized_filter]
+
+    transactions: list[TransactionRow] = []
+    for account in accounts:
+        raw_transactions = list_account_transactions(
+            account["id"],
+            api_key,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        transactions.extend(
+            _parse_transactions(
+                raw_transactions,
+                account_name=account["name"],
+                account_type=account["type"],
+            )
+        )
+
+    transactions.sort(
+        key=lambda row: (row.date != "Unknown", row.date),
+        reverse=True,
+    )
+    return transactions
