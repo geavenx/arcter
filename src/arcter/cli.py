@@ -111,7 +111,18 @@ def _normalize_account_type_filter(value: str | None) -> str | None:
 
     normalized = value.strip().upper()
     if normalized not in ("BANK", "CREDIT"):
-        raise ValueError("Option --type must be either 'bank' or 'credit'.")
+        raise ValueError("Option --account-type must be either 'bank' or 'credit'.")
+
+    return normalized
+
+
+def _normalize_transaction_type_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip().upper()
+    if normalized not in ("CREDIT", "DEBIT"):
+        raise ValueError("Option --type must be either 'credit' or 'debit'.")
 
     return normalized
 
@@ -500,9 +511,14 @@ def account_transactions(
         "-t",
         help="End date (YYYY-MM-DD).",
     ),
-    account_type: str | None = typer.Option(
+    transaction_type: str | None = typer.Option(
         None,
         "--type",
+        help="Filter by transaction type: credit or debit.",
+    ),
+    account_type: str | None = typer.Option(
+        None,
+        "--account-type",
         help="Filter by account type: bank or credit.",
     ),
     limit: int = typer.Option(
@@ -520,7 +536,10 @@ def account_transactions(
     try:
         normalized_from = _validate_iso_date(date_from, "--from")
         normalized_to = _validate_iso_date(date_to, "--to")
-        normalized_type = _normalize_account_type_filter(account_type)
+        normalized_transaction_type = _normalize_transaction_type_filter(
+            transaction_type
+        )
+        normalized_account_type = _normalize_account_type_filter(account_type)
         if limit <= 0:
             raise ValueError("Option --limit must be a positive integer.")
 
@@ -541,10 +560,17 @@ def account_transactions(
             item_id,
             date_from=normalized_from,
             date_to=normalized_to,
-            account_type_filter=normalized_type,
+            account_type_filter=normalized_account_type,
         )
     except pluggy.PluggyError as exc:
         _exit_with_error(exc)
+
+    if normalized_transaction_type is not None:
+        rows = [
+            row
+            for row in rows
+            if row.type.strip().upper() == normalized_transaction_type
+        ]
 
     if not rows:
         if user_passed_date_filter:
