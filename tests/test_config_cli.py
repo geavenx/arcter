@@ -43,6 +43,7 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
     assert "salary" in lowered_output
     assert "currency" in lowered_output
     assert "savings_goal" in lowered_output
+    assert "credit_cards.invoice_due_day" in lowered_output
 
 
 def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
@@ -91,6 +92,8 @@ def test_list_supports_json_and_toml_formats(tmp_path: Path) -> None:
 
     assert toml_result.exit_code == 0
     assert "salary = 123.45" in toml_result.stdout
+    assert "[credit_cards]" in toml_result.stdout
+    assert "invoice_due_day = 30" in toml_result.stdout
 
 
 def test_set_and_unset_help_include_valid_keys() -> None:
@@ -101,11 +104,13 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "salary" in set_help.stdout.lower()
     assert "currency" in set_help.stdout.lower()
     assert "savings_goal" in set_help.stdout.lower()
+    assert "credit_cards.invoice_due" in set_help.stdout.lower()
 
     assert unset_help.exit_code == 0
     assert "salary" in unset_help.stdout.lower()
     assert "currency" in unset_help.stdout.lower()
     assert "savings_goal" in unset_help.stdout.lower()
+    assert "credit_cards.invoice_due" in unset_help.stdout.lower()
 
 
 def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None:
@@ -127,3 +132,52 @@ def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None
     ]
     assert savings_goal_lines
     assert "env" in savings_goal_lines[0]
+
+
+def test_set_invoice_due_day_writes_nested_credit_cards_table(tmp_path: Path) -> None:
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "credit_cards.invoice_due_day", "25"],
+        env=_env(tmp_path),
+    )
+
+    assert set_result.exit_code == 0
+    assert "Set credit_cards.invoice_due_day = 25" in set_result.stdout
+
+    config_file = tmp_path / "arcter" / "config.toml"
+    content = config_file.read_text(encoding="utf-8")
+    assert "[credit_cards]" in content
+    assert "invoice_due_day = 25" in content
+
+    get_result = runner.invoke(
+        app, ["config", "get", "credit_cards.invoice_due_day"], env=_env(tmp_path)
+    )
+    assert get_result.exit_code == 0
+    assert "credit_cards.invoice_due_day = 25 (source: file)" in get_result.stdout
+
+
+def test_set_invoice_due_day_rejects_invalid_value(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["config", "set", "credit_cards.invoice_due_day", "99"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "invoice_due_day" in output
+    assert "less than or equal to 31" in output
+
+
+def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    invoice_lines = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("credit_cards.invoice_due_day")
+    ]
+    assert invoice_lines
+    assert "30" in invoice_lines[0]
+    assert "default" in invoice_lines[0]

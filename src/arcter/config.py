@@ -19,6 +19,7 @@ class ConfigKey(str, Enum):
     currency = "currency"
     salary = "salary"
     savings_goal = "savings_goal"
+    credit_cards_invoice_due_day = "credit_cards.invoice_due_day"
 
 
 VALID_KEYS = tuple(key.value for key in ConfigKey)
@@ -50,12 +51,19 @@ class ConfigValidationError(ConfigError):
     """Raised when a config value fails schema validation."""
 
 
+class CreditCardsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_due_day: int = Field(default=30, ge=1, le=31)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     currency: ISO4217 = Field(default=ISO4217("BRL"))
     salary: Decimal = Field(default=Decimal("200.00"), decimal_places=2)
     savings_goal: Decimal = Field(default=Decimal("500.00"), decimal_places=2)
+    credit_cards: CreditCardsConfig = Field(default_factory=CreditCardsConfig)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -90,13 +98,53 @@ def normalize_and_validate_key(key: str) -> str:
     return normalized
 
 
-def _normalize_input_map(data: Mapping[str, Any]) -> dict[str, Any]:
+def _normalize_input_map(
+    data: Mapping[str, Any],
+    prefix: str = "",
+) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for raw_key, value in data.items():
-        key = normalize_and_validate_key(str(raw_key))
-        normalized[key] = value
+        key = _normalize_key(str(raw_key))
+        full_key = f"{prefix}.{key}" if prefix else key
+
+        if isinstance(value, Mapping):
+            normalized.update(_normalize_input_map(value, prefix=full_key))
+            continue
+
+        normalized_key = normalize_and_validate_key(full_key)
+        normalized[normalized_key] = value
 
     return normalized
+
+
+def _flat_to_nested_map(data: Mapping[str, Any]) -> dict[str, Any]:
+    nested: dict[str, Any] = {}
+
+    for raw_key, value in data.items():
+        key = normalize_and_validate_key(str(raw_key))
+        path = key.split(".")
+        current: dict[str, Any] = nested
+
+        for part in path[:-1]:
+            current_value = current.get(part)
+            if isinstance(current_value, dict):
+                current = current_value
+                continue
+
+            next_map: dict[str, Any] = {}
+            current[part] = next_map
+            current = next_map
+
+        current[path[-1]] = value
+
+    return nested
+
+
+def _resolve_config_value(config: Config, key: str) -> Any:
+    resolved: Any = config
+    for part in key.split("."):
+        resolved = getattr(resolved, part)
+    return resolved
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -137,6 +185,9 @@ def load_env_config() -> dict[str, Any]:
     if "ARCTER_SAVINGS_GOAL" in os.environ:
         config["savings_goal"] = os.environ["ARCTER_SAVINGS_GOAL"]
 
+    if "ARCTER_INVOICE_DUE_DAY" in os.environ:
+        config["credit_cards.invoice_due_day"] = os.environ["ARCTER_INVOICE_DUE_DAY"]
+
     return _normalize_input_map(config)
 
 
@@ -146,6 +197,9 @@ def _serialize_for_toml(key: str, value: Any) -> Any:
 
     if key in ("salary", "savings_goal"):
         return float(Decimal(value))
+
+    if key == "credit_cards.invoice_due_day":
+        return int(value)
 
     return value
 
@@ -160,8 +214,11 @@ def _write_toml(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def _validate_payload(payload: Mapping[str, Any]) -> Config:
+    normalized_payload = _normalize_input_map(payload)
+    nested_payload = _flat_to_nested_map(normalized_payload)
+
     try:
-        return Config(**payload)
+        return Config(**nested_payload)
     except ValidationError as exc:
         raise ConfigValidationError(_format_validation_error(exc)) from exc
 
@@ -176,6 +233,15 @@ def _normalize_cli_value(key: str, raw_value: str) -> Any:
         except InvalidOperation as exc:
             raise ConfigValidationError(
                 f"Invalid value for '{key}'. Use a numeric value, for example: 2500.00"
+            ) from exc
+
+    if key == "credit_cards.invoice_due_day":
+        try:
+            return int(raw_value)
+        except ValueError as exc:
+            raise ConfigValidationError(
+                "Invalid value for 'credit_cards.invoice_due_day'. "
+                "Use an integer between 1 and 31."
             ) from exc
 
     return raw_value
@@ -208,9 +274,13 @@ def resolve_config_with_sources(
 
 
 def _value_for_output(key: str, value: Any) -> str:
-    if key == "salary":
+    if key in ("salary", "savings_goal"):
         decimal_value = Decimal(value).quantize(Decimal("0.01"))
         return str(decimal_value)
+
+    if key == "credit_cards.invoice_due_day":
+        return str(int(value))
+
     return str(value)
 
 
@@ -222,15 +292,12 @@ def set_user_config(key: str, raw_value: str) -> tuple[str, str]:
     candidate = dict(data)
     candidate[normalized_key] = normalized_value
     validated = _validate_payload(candidate)
+    validated_value = _resolve_config_value(validated, normalized_key)
 
-    data[normalized_key] = _serialize_for_toml(
-        normalized_key, getattr(validated, normalized_key)
-    )
-    _write_toml(user_config_path(), data)
+    data[normalized_key] = _serialize_for_toml(normalized_key, validated_value)
+    _write_toml(user_config_path(), _flat_to_nested_map(data))
 
-    return normalized_key, _value_for_output(
-        normalized_key, getattr(validated, normalized_key)
-    )
+    return normalized_key, _value_for_output(normalized_key, validated_value)
 
 
 def unset_user_config(key: str) -> bool:
@@ -241,23 +308,24 @@ def unset_user_config(key: str) -> bool:
         return False
 
     del data[normalized_key]
-    _write_toml(user_config_path(), data)
+    _write_toml(user_config_path(), _flat_to_nested_map(data))
     return True
 
 
 def get_config_value(key: str) -> tuple[str, str, str]:
     normalized_key = normalize_and_validate_key(key)
     config, sources = resolve_config_with_sources()
-    value = _value_for_output(normalized_key, getattr(config, normalized_key))
+    value = _value_for_output(
+        normalized_key, _resolve_config_value(config, normalized_key)
+    )
     return normalized_key, value, sources[normalized_key]
 
 
 def list_config_values() -> tuple[dict[str, str], dict[str, str]]:
     config, sources = resolve_config_with_sources()
     values = {
-        "currency": _value_for_output("currency", config.currency),
-        "salary": _value_for_output("salary", config.salary),
-        "savings_goal": _value_for_output("savings_goal", config.savings_goal),
+        key: _value_for_output(key, _resolve_config_value(config, key))
+        for key in VALID_KEYS
     }
     return values, sources
 
@@ -271,10 +339,13 @@ def list_config_as_json() -> str:
 
 
 def list_config_as_toml() -> str:
-    values, _ = list_config_values()
+    config = load_config()
     toml_payload = {
-        "currency": values["currency"],
-        "salary": float(Decimal(values["salary"])),
-        "savings_goal": float(Decimal(values["savings_goal"])),
+        "currency": str(config.currency),
+        "salary": float(Decimal(config.salary)),
+        "savings_goal": float(Decimal(config.savings_goal)),
+        "credit_cards": {
+            "invoice_due_day": int(config.credit_cards.invoice_due_day),
+        },
     }
     return tomli_w.dumps(toml_payload)

@@ -1,3 +1,4 @@
+import calendar
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -42,6 +43,11 @@ def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
         ("currency", values["currency"], sources["currency"]),
         ("salary", values["salary"], sources["salary"]),
         ("savings_goal", values["savings_goal"], sources["savings_goal"]),
+        (
+            "credit_cards.invoice_due_day",
+            values["credit_cards.invoice_due_day"],
+            sources["credit_cards.invoice_due_day"],
+        ),
     ]
     headers = ("Key", "Value", "Source")
     widths = [len(column) for column in headers]
@@ -108,6 +114,31 @@ def _normalize_account_type_filter(value: str | None) -> str | None:
         raise ValueError("Option --type must be either 'bank' or 'credit'.")
 
     return normalized
+
+
+def _derive_invoice_cycle_date_range(
+    invoice_due_day: int,
+    reference_date: date | None = None,
+) -> tuple[str, str]:
+    current = reference_date or date.today()
+
+    if current.month == 1:
+        previous_year = current.year - 1
+        previous_month = 12
+    else:
+        previous_year = current.year
+        previous_month = current.month - 1
+
+    previous_month_last_day = calendar.monthrange(previous_year, previous_month)[1]
+    current_month_last_day = calendar.monthrange(current.year, current.month)[1]
+
+    start_day = min(invoice_due_day, previous_month_last_day)
+    end_day = min(invoice_due_day, current_month_last_day)
+
+    start_date = date(previous_year, previous_month, start_day)
+    end_date = date(current.year, current.month, end_day)
+
+    return start_date.isoformat(), end_date.isoformat()
 
 
 def _format_transaction_amount(amount: Decimal, transaction_type: str) -> str:
@@ -484,13 +515,25 @@ def account_transactions(
     """
     List recent transactions for connected accounts.
     """
+    user_passed_date_filter = date_from is not None or date_to is not None
+
     try:
         normalized_from = _validate_iso_date(date_from, "--from")
         normalized_to = _validate_iso_date(date_to, "--to")
         normalized_type = _normalize_account_type_filter(account_type)
         if limit <= 0:
             raise ValueError("Option --limit must be a positive integer.")
-    except ValueError as exc:
+
+        if normalized_from is None or normalized_to is None:
+            config = load_config()
+            cycle_from, cycle_to = _derive_invoice_cycle_date_range(
+                int(config.credit_cards.invoice_due_day)
+            )
+            if normalized_from is None:
+                normalized_from = cycle_from
+            if normalized_to is None:
+                normalized_to = cycle_to
+    except (ConfigError, ValueError) as exc:
         _exit_with_error(exc)
 
     try:
@@ -504,7 +547,7 @@ def account_transactions(
         _exit_with_error(exc)
 
     if not rows:
-        if normalized_from or normalized_to:
+        if user_passed_date_filter:
             from_label = normalized_from or "start"
             to_label = normalized_to or "today"
             typer.echo(f"No transactions found between {from_label} and {to_label}.")
