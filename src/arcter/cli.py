@@ -1,5 +1,8 @@
 import calendar
+import csv
 import datetime
+import json
+import sys
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -32,6 +35,12 @@ class OutputFormat(str, Enum):
     table = "table"
     json = "json"
     toml = "toml"
+
+
+class TransactionOutputFormat(str, Enum):
+    table = "table"
+    csv = "csv"
+    json = "json"
 
 
 def _exit_with_error(exc: Exception) -> None:
@@ -246,6 +255,55 @@ def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
         typer.echo(
             f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  {row[3]:<{widths[3]}}  {row[4]:<{widths[4]}}  {row[5]:<{widths[5]}}  {row[6]:<{widths[6]}}"
         )
+
+
+def _print_transaction_csv(rows: list[pluggy.TransactionRow]) -> None:
+    writer = csv.writer(sys.stdout)
+    writer.writerow(
+        [
+            "Date",
+            "Account",
+            "Account Type",
+            "Type",
+            "Amount",
+            "Currency",
+            "Category",
+            "Status",
+            "Description",
+        ]
+    )
+    for row in rows:
+        writer.writerow(
+            [
+                row.date,
+                row.account_name,
+                row.account_type,
+                row.type,
+                str(row.amount.quantize(Decimal("0.01"))),
+                row.currency_code,
+                row.category or "",
+                row.status,
+                row.description,
+            ]
+        )
+
+
+def _print_transaction_json(rows: list[pluggy.TransactionRow]) -> None:
+    data = [
+        {
+            "date": row.date,
+            "account": row.account_name,
+            "account_type": row.account_type,
+            "type": row.type,
+            "amount": str(row.amount.quantize(Decimal("0.01"))),
+            "currency": row.currency_code,
+            "category": row.category,
+            "status": row.status,
+            "description": row.description,
+        }
+        for row in rows
+    ]
+    typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def _print_spending_table(
@@ -708,6 +766,13 @@ def account_transactions(
         "-n",
         help="Maximum number of transactions to display.",
     ),
+    output_format: TransactionOutputFormat = typer.Option(
+        TransactionOutputFormat.table,
+        "--output",
+        "-o",
+        help="Output format: table, csv, or json.",
+        case_sensitive=False,
+    ),
 ) -> None:
     """
     List recent transactions for connected accounts.
@@ -766,6 +831,12 @@ def account_transactions(
         ]
 
     if not rows:
+        if output_format == TransactionOutputFormat.csv:
+            _print_transaction_csv([])
+            return
+        if output_format == TransactionOutputFormat.json:
+            _print_transaction_json([])
+            return
         if user_passed_date_filter:
             from_label = normalized_from or "start"
             to_label = normalized_to or "today"
@@ -775,6 +846,13 @@ def account_transactions(
         return
 
     displayed_rows = rows[:limit]
+    if output_format == TransactionOutputFormat.csv:
+        _print_transaction_csv(displayed_rows)
+        return
+    if output_format == TransactionOutputFormat.json:
+        _print_transaction_json(displayed_rows)
+        return
+
     _print_transaction_table(displayed_rows)
     total_value = sum(
         (_signed_transaction_amount(row.amount, row.type) for row in displayed_rows),
