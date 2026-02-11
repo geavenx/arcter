@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Tooling — uv (mandatory)
+- **Always** load the `uv-package-manager` skill before performing any package, dependency, environment, or project management operation.
+- Use `uv` for **all** Python-related operations: dependency installation, virtual environment management, running scripts/commands, building, locking, and publishing.
+- Never fall back to `pip`, `pip-tools`, `venv`, `poetry`, `pipenv`, or any other package/environment manager. `uv` is the single source of truth for this project.
+
 ## Project Structure & Module Organization
 - `src/arcter/cli.py`: Typer CLI entrypoint, exposed via the `arcter` console script.
 - `src/arcter/config.py`: configuration loading, merge precedence, and Pydantic validation.
