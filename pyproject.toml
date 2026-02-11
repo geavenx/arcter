@@ -9,6 +9,7 @@ dependencies = [
     "pycountry>=24.6.1",
     "pydantic>=2.12.5",
     "pydantic-extra-types>=2.11.0",
+    "tomli-w>=1.2.0",
     "typer>=0.23.0",
 ]
 
@@ -17,3 +18,8 @@ arcter = "arcter.cli:app"
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
