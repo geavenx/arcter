@@ -106,3 +106,24 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "salary" in unset_help.stdout.lower()
     assert "currency" in unset_help.stdout.lower()
     assert "savings_goal" in unset_help.stdout.lower()
+
+
+def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None:
+    config_file = tmp_path / "arcter" / "config.toml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text("salary = 100.00\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["config", "list"],
+        env=_env(tmp_path, {"ARCTER_SAVINGS_GOAL": "900.00"}),
+    )
+
+    assert result.exit_code == 0
+    savings_goal_lines = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("savings_goal")
+    ]
+    assert savings_goal_lines
+    assert "env" in savings_goal_lines[0]

@@ -10,6 +10,7 @@ from arcter.config import (
     list_config_as_json,
     list_config_as_toml,
     list_config_values,
+    load_config,
     set_user_config,
     unset_user_config,
     user_config_path,
@@ -39,7 +40,7 @@ def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
     rows = [
         ("currency", values["currency"], sources["currency"]),
         ("salary", values["salary"], sources["salary"]),
-        ("savings_goal", values["savings_goal"], sources["salary"]),
+        ("savings_goal", values["savings_goal"], sources["savings_goal"]),
     ]
     headers = ("Key", "Value", "Source")
     widths = [len(column) for column in headers]
@@ -61,6 +62,10 @@ def _format_balance_value(value: Decimal | None) -> str:
     if value is None:
         return "N/A"
     return str(value.quantize(Decimal("0.01")))
+
+
+def _format_currency_amount(currency_code: str, value: Decimal) -> str:
+    return f"{currency_code} {value.quantize(Decimal('0.01'))}"
 
 
 def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
@@ -226,3 +231,74 @@ def account_balance(
 
     _print_balance_table(rows)
     _print_balance_totals(rows)
+
+
+@account_app.command("goal")
+def account_goal(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+    currency: str | None = typer.Option(
+        None,
+        "--currency",
+        "-c",
+        help="Currency code used to filter BANK balances. Defaults to configured currency.",
+    ),
+) -> None:
+    """
+    Show savings goal progress using BANK balances.
+    """
+    try:
+        config = load_config()
+        rows = pluggy.list_item_balances_with_env(item_id)
+    except (ConfigError, pluggy.PluggyError) as exc:
+        _exit_with_error(exc)
+
+    target_currency = currency.strip().upper() if currency else str(config.currency)
+    bank_rows = [
+        row
+        for row in rows
+        if row.type == "BANK" and row.currency_code.upper() == target_currency
+    ]
+
+    if not bank_rows:
+        typer.echo(f"No BANK accounts found in {target_currency} for this Pluggy item.")
+        return
+
+    numeric_balances = [row.balance for row in bank_rows if row.balance is not None]
+    if not numeric_balances:
+        typer.echo(
+            f"No numeric balances available for BANK accounts in {target_currency}."
+        )
+        return
+
+    current_total = sum(numeric_balances, Decimal("0"))
+    goal = Decimal(config.savings_goal)
+    salary = Decimal(config.salary)
+
+    if goal == 0:
+        percentage = Decimal("100.0") if current_total > 0 else Decimal("0.0")
+    else:
+        percentage = ((current_total / goal) * Decimal("100")).quantize(Decimal("0.1"))
+
+    typer.echo(f"Savings goal progress ({target_currency}):")
+    typer.echo("")
+    typer.echo(f"  Goal:       {_format_currency_amount(target_currency, goal)}")
+    typer.echo(
+        f"  Current:    {_format_currency_amount(target_currency, current_total)}  ({percentage}%)"
+    )
+
+    if current_total >= goal:
+        surplus = current_total - goal
+        typer.echo(f"  Surplus:    {_format_currency_amount(target_currency, surplus)}")
+        typer.echo("  Goal reached!")
+        return
+
+    remaining = goal - current_total
+    typer.echo(f"  Remaining:  {_format_currency_amount(target_currency, remaining)}")
+    typer.echo(f"  Monthly salary: {_format_currency_amount(target_currency, salary)}")
+
+    if salary > 0:
+        estimated_months = (remaining / salary).quantize(Decimal("0.1"))
+        typer.echo(f"  Estimated:  ~{estimated_months} months to reach goal")

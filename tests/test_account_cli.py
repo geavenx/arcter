@@ -4,6 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from arcter.cli import app
+from arcter.config import Config, ConfigError
 from arcter.pluggy import BalanceRow, PluggyError
 
 runner = CliRunner()
@@ -360,3 +361,308 @@ def test_account_balance_fails_when_fetch_returns_error(
 
     assert result.exit_code == 1
     assert "Pluggy accounts list failed with status 401: Unauthorized" in output
+
+
+def test_account_goal_reports_progress_when_goal_not_reached(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, str | None] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(item_id: str | None) -> list[BalanceRow]:
+        observed["item_id"] = item_id
+        return [
+            BalanceRow(
+                type="BANK",
+                name="Main",
+                balance=Decimal("200.00"),
+                currency_code="BRL",
+            ),
+            BalanceRow(
+                type="BANK",
+                name="Emergency",
+                balance=Decimal("150.00"),
+                currency_code="BRL",
+            ),
+            BalanceRow(
+                type="BANK",
+                name="Pending",
+                balance=None,
+                currency_code="BRL",
+            ),
+            BalanceRow(
+                type="CREDIT",
+                name="Card",
+                balance=Decimal("999.99"),
+                currency_code="BRL",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(
+        app, ["account", "goal", "item-from-arg"], env=_env(tmp_path)
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] == "item-from-arg"
+    assert "Savings goal progress (BRL):" in result.stdout
+    assert "Goal:       BRL 500.00" in result.stdout
+    assert "Current:    BRL 350.00  (70.0%)" in result.stdout
+    assert "Remaining:  BRL 150.00" in result.stdout
+    assert "Monthly salary: BRL 200.00" in result.stdout
+    assert "Estimated:  ~0.8 months to reach goal" in result.stdout
+
+
+def test_account_goal_reports_surplus_when_goal_exceeded(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(
+                type="BANK",
+                name="Main",
+                balance=Decimal("600.00"),
+                currency_code="BRL",
+            )
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Current:    BRL 600.00  (120.0%)" in result.stdout
+    assert "Surplus:    BRL 100.00" in result.stdout
+    assert "Goal reached!" in result.stdout
+
+
+def test_account_goal_reports_exact_goal_as_reached(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(
+                type="BANK",
+                name="Main",
+                balance=Decimal("500.00"),
+                currency_code="BRL",
+            )
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Current:    BRL 500.00  (100.0%)" in result.stdout
+    assert "Goal reached!" in result.stdout
+
+
+def test_account_goal_reports_when_no_bank_accounts_in_currency(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(
+                type="BANK",
+                name="USD Account",
+                balance=Decimal("100.00"),
+                currency_code="USD",
+            ),
+            BalanceRow(
+                type="CREDIT",
+                name="Card",
+                balance=Decimal("50.00"),
+                currency_code="BRL",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "No BANK accounts found in BRL for this Pluggy item." in result.stdout
+
+
+def test_account_goal_reports_when_all_bank_balances_are_none(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(type="BANK", name="A", balance=None, currency_code="BRL"),
+            BalanceRow(type="BANK", name="B", balance=None, currency_code="BRL"),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "No numeric balances available for BANK accounts in BRL." in result.stdout
+
+
+def test_account_goal_respects_custom_currency_filter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(
+                type="BANK",
+                name="BRL Account",
+                balance=Decimal("100.00"),
+                currency_code="BRL",
+            ),
+            BalanceRow(
+                type="BANK",
+                name="USD Account",
+                balance=Decimal("50.00"),
+                currency_code="USD",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(
+        app, ["account", "goal", "--currency", "usd"], env=_env(tmp_path)
+    )
+
+    assert result.exit_code == 0
+    assert "Savings goal progress (USD):" in result.stdout
+    assert "Current:    USD 50.00  (10.0%)" in result.stdout
+
+
+def test_account_goal_omits_estimated_line_when_salary_is_zero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("0.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        return [
+            BalanceRow(
+                type="BANK",
+                name="Main",
+                balance=Decimal("100.00"),
+                currency_code="BRL",
+            )
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Monthly salary: BRL 0.00" in result.stdout
+    assert "Estimated:" not in result.stdout
+
+
+def test_account_goal_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
+        raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_balances_with_env",
+        fake_list_item_balances_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Pluggy accounts list failed with status 500: Internal Error" in output
+
+
+def test_account_goal_propagates_config_error(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        raise ConfigError("Config file is not valid TOML")
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+
+    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Config file is not valid TOML" in output
