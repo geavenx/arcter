@@ -16,8 +16,9 @@ from arcter.constants import APP_AUTHOR, APP_NAME
 
 
 class ConfigKey(str, Enum):
-    salary = "salary"
     currency = "currency"
+    salary = "salary"
+    savings_goal = "savings_goal"
 
 
 VALID_KEYS = tuple(key.value for key in ConfigKey)
@@ -52,8 +53,9 @@ class ConfigValidationError(ConfigError):
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    salary: Decimal = Field(default=Decimal("200.00"), decimal_places=2)
     currency: ISO4217 = Field(default=ISO4217("BRL"))
+    salary: Decimal = Field(default=Decimal("200.00"), decimal_places=2)
+    savings_goal: Decimal = Field(default=Decimal("500.00"), decimal_places=2)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -132,14 +134,19 @@ def load_env_config() -> dict[str, Any]:
     if "ARCTER_CURRENCY" in os.environ:
         config["currency"] = os.environ["ARCTER_CURRENCY"]
 
+    if "ARCTER_SAVINGS_GOAL" in os.environ:
+        config["savings_goal"] = os.environ["ARCTER_SAVINGS_GOAL"]
+
     return _normalize_input_map(config)
 
 
 def _serialize_for_toml(key: str, value: Any) -> Any:
-    if key == "salary":
-        return float(Decimal(value))
     if key == "currency":
         return str(value)
+
+    if key in ("salary", "savings_goal"):
+        return float(Decimal(value))
+
     return value
 
 
@@ -160,16 +167,17 @@ def _validate_payload(payload: Mapping[str, Any]) -> Config:
 
 
 def _normalize_cli_value(key: str, raw_value: str) -> Any:
-    if key == "salary":
+    if key == "currency":
+        return raw_value.strip().upper()
+
+    if key in ("salary", "savings_goal"):
         try:
             return Decimal(raw_value)
         except InvalidOperation as exc:
             raise ConfigValidationError(
-                "Invalid value for 'salary'. Use a numeric value, for example: 2500.00"
+                f"Invalid value for '{key}'. Use a numeric value, for example: 2500.00"
             ) from exc
 
-    if key == "currency":
-        return raw_value.strip().upper()
 
     return raw_value
 
@@ -248,8 +256,9 @@ def get_config_value(key: str) -> tuple[str, str, str]:
 def list_config_values() -> tuple[dict[str, str], dict[str, str]]:
     config, sources = resolve_config_with_sources()
     values = {
-        "salary": _value_for_output("salary", config.salary),
         "currency": _value_for_output("currency", config.currency),
+        "salary": _value_for_output("salary", config.salary),
+        "savings_goal": _value_for_output("savings_goal", config.savings_goal)
     }
     return values, sources
 
@@ -265,7 +274,8 @@ def list_config_as_json() -> str:
 def list_config_as_toml() -> str:
     values, _ = list_config_values()
     toml_payload = {
-        "salary": float(Decimal(values["salary"])),
         "currency": values["currency"],
+        "salary": float(Decimal(values["salary"])),
+        "savings_goal": float(Decimal(values["savings_goal"]))
     }
     return tomli_w.dumps(toml_payload)
