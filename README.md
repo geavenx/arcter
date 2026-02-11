@@ -9,7 +9,7 @@ A personal finance CLI that connects to Brazilian bank accounts via the [Pluggy]
 - Configuration with layered precedence (defaults -> file -> env -> CLI)
 - Pluggy account sync (`update`) and unified balance view (`balance`)
 - Credit card details (`credit`) and savings goal tracking (`goal`)
-- Transaction listing with date/account/type/category filters (`transactions`)
+- Transaction listing with date/account/type/category filters and export formats (`transactions`)
 - Spending breakdown by category with direction/date/top filters (`spending`)
 - Secure Pluggy credential storage via OS keyring (`login` / `logout`)
 
@@ -81,6 +81,10 @@ arcter account transactions --from 2025-01-01 --to 2025-01-31
 arcter account transactions --type debit --account-type bank
 arcter account transactions --excludes "Transfer" --limit 20
 
+# Export transactions for downstream tools
+arcter account transactions --output csv --limit 100 > transactions.csv
+arcter account transactions --output json --type credit
+
 # Summarize spending by category
 arcter account spending --from 2025-01-01 --to 2025-01-31
 arcter account spending --direction income
@@ -104,7 +108,7 @@ Default values:
 | `credit_cards.excluded_categories` | `[]` | — |
 | `pluggy.item_id` | `""` | `PLUGGY_ITEM_ID` |
 
-**Pluggy integration** authenticates with the Pluggy API, then fetches account data (balances, credit card details, transactions) through a central HTTP client with unified error handling. Transaction listing supports server-side pagination and client-side filtering by date range, transaction type, account type, and category exclusions. Spending summaries reuse the same transaction layer and aggregate totals by Pluggy category (`expense`, `income`, or `all`) with optional top-N output. When no date range is given, spending defaults to first day of the current month through today, while transaction listing derives dates from the configured invoice cycle.
+**Pluggy integration** authenticates with the Pluggy API, then fetches account data (balances, credit card details, transactions) through a central HTTP client with unified error handling. Transaction listing supports server-side pagination, client-side filtering by date range/transaction type/account type/category exclusions, and output rendering as `table`, `csv`, or `json` for scripting and spreadsheet workflows. Spending summaries reuse the same transaction layer and aggregate totals by Pluggy category (`expense`, `income`, or `all`) with optional top-N output. When no date range is given, spending defaults to first day of the current month through today, while transaction listing derives dates from the configured invoice cycle.
 
 ## Contributing
 

@@ -1,4 +1,6 @@
+import csv
 import datetime
+import json
 from decimal import Decimal
 from pathlib import Path
 
@@ -1481,6 +1483,474 @@ def test_account_transactions_handles_no_transactions(
 
     assert result.exit_code == 0
     assert "No transactions found for this Pluggy item." in result.stdout
+
+
+def test_account_transactions_csv_output_contains_header_and_data(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "transactions",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+            "--output",
+            "csv",
+        ],
+        env=_env(tmp_path),
+    )
+
+    lines = result.stdout.strip().splitlines()
+    assert result.exit_code == 0
+    assert (
+        lines[0]
+        == "Date,Account,Account Type,Type,Amount,Currency,Category,Status,Description"
+    )
+    assert (
+        lines[1] == "2026-01-15,Checking,BANK,CREDIT,1500.00,BRL,Transfer,POSTED,Salary"
+    )
+    assert "+1,500.00" not in result.stdout
+    assert "Salary" in result.stdout
+    assert "Showing " not in result.stdout
+    assert "TOTAL:" not in result.stdout
+
+
+def test_account_transactions_csv_output_no_truncation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    long_account_name = "Checking Account For Long Name Validation"
+    long_description = "This description should remain complete in csv output"
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-16",
+                description=long_description,
+                amount=Decimal("100.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Shopping",
+                account_name=long_account_name,
+                account_type="BANK",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "transactions",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+            "--output",
+            "csv",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert long_account_name in result.stdout
+    assert long_description in result.stdout
+    assert "Checking Account F..." not in result.stdout
+
+
+def test_account_transactions_csv_output_empty_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "csv"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert (
+        result.stdout.strip()
+        == "Date,Account,Account Type,Type,Amount,Currency,Category,Status,Description"
+    )
+    assert "No transactions found" not in result.stdout
+
+
+def test_account_transactions_csv_output_handles_null_category(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category=None,
+                account_name="Checking",
+                account_type="BANK",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "csv"],
+        env=_env(tmp_path),
+    )
+    rows = list(csv.reader(result.stdout.splitlines()))
+
+    assert result.exit_code == 0
+    assert len(rows) == 2
+    assert rows[1][6] == ""
+
+
+def test_account_transactions_json_output_contains_all_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "json"],
+        env=_env(tmp_path),
+    )
+    data = json.loads(result.stdout)
+
+    assert result.exit_code == 0
+    assert isinstance(data, list)
+    assert len(data) == 2
+    expected_keys = {
+        "date",
+        "account",
+        "account_type",
+        "type",
+        "amount",
+        "currency",
+        "category",
+        "status",
+        "description",
+    }
+    assert set(data[0].keys()) == expected_keys
+    assert set(data[1].keys()) == expected_keys
+    assert isinstance(data[0]["amount"], str)
+    assert "Showing " not in result.stdout
+    assert "TOTAL:" not in result.stdout
+
+
+def test_account_transactions_json_output_null_category(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category=None,
+                account_name="Checking",
+                account_type="BANK",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "json"],
+        env=_env(tmp_path),
+    )
+    data = json.loads(result.stdout)
+
+    assert result.exit_code == 0
+    assert data[0]["category"] is None
+
+
+def test_account_transactions_json_output_empty_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "json"],
+        env=_env(tmp_path),
+    )
+    data = json.loads(result.stdout)
+
+    assert result.exit_code == 0
+    assert data == []
+    assert "No transactions found" not in result.stdout
+
+
+def test_account_transactions_output_csv_respects_filters(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "csv", "--type", "credit"],
+        env=_env(tmp_path),
+    )
+    rows = list(csv.reader(result.stdout.splitlines()))
+
+    assert result.exit_code == 0
+    assert len(rows) == 2
+    assert rows[1][3] == "CREDIT"
+    assert "Groceries" not in result.stdout
+
+
+def test_account_transactions_output_csv_respects_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date=f"2026-01-{day:02d}",
+                description=f"Tx {day}",
+                amount=Decimal("10.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Misc",
+                account_name="Checking",
+                account_type="BANK",
+            )
+            for day in range(1, 11)
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--output", "csv", "--limit", "3"],
+        env=_env(tmp_path),
+    )
+    rows = list(csv.reader(result.stdout.splitlines()))
+
+    assert result.exit_code == 0
+    assert len(rows) == 4
+
+
+def test_account_transactions_output_default_is_table(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--from", "2026-01-01", "--to", "2026-01-31"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Date" in result.stdout
+    assert "Account" in result.stdout
+    assert "Showing 1 of 1 transactions." in result.stdout
+    assert "TOTAL: +1,500.00" in result.stdout
 
 
 def test_account_transactions_rejects_invalid_date_format(tmp_path: Path) -> None:
