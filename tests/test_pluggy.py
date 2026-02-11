@@ -5,6 +5,26 @@ import pytest
 import arcter.pluggy as pluggy
 
 
+def _tx(
+    amount: str,
+    transaction_type: str,
+    category: str | None,
+    *,
+    currency_code: str = "BRL",
+) -> pluggy.TransactionRow:
+    return pluggy.TransactionRow(
+        date="2026-02-01",
+        description="Transaction",
+        amount=Decimal(amount),
+        currency_code=currency_code,
+        type=transaction_type,
+        status="POSTED",
+        category=category,
+        account_name="Checking",
+        account_type="BANK",
+    )
+
+
 def test_list_item_balances_filters_and_parses_accounts(monkeypatch) -> None:
     observed: dict[str, object] = {}
 
@@ -600,6 +620,142 @@ def test_parse_transactions_handles_missing_fields() -> None:
             account_type="BANK",
         )
     ]
+
+
+def test_aggregate_by_category_groups_expenses() -> None:
+    rows = [
+        _tx("100.00", "DEBIT", "Food"),
+        _tx("40.00", "DEBIT", "Food"),
+        _tx("50.00", "DEBIT", "Transportation"),
+        _tx("300.00", "CREDIT", "Salary"),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="expense")
+
+    assert summaries == [
+        pluggy.CategorySummary(
+            category="Food",
+            total=Decimal("140.00"),
+            count=2,
+            percentage=Decimal("73.7"),
+        ),
+        pluggy.CategorySummary(
+            category="Transportation",
+            total=Decimal("50.00"),
+            count=1,
+            percentage=Decimal("26.3"),
+        ),
+    ]
+
+
+def test_aggregate_by_category_handles_uncategorized() -> None:
+    rows = [
+        _tx("30.00", "DEBIT", None),
+        _tx("10.00", "DEBIT", " "),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="expense")
+
+    assert summaries == [
+        pluggy.CategorySummary(
+            category="Uncategorized",
+            total=Decimal("40.00"),
+            count=2,
+            percentage=Decimal("100.0"),
+        )
+    ]
+
+
+def test_aggregate_by_category_filters_income() -> None:
+    rows = [
+        _tx("1000.00", "CREDIT", "Salary"),
+        _tx("200.00", "DEBIT", "Food"),
+        _tx("150.00", "CREDIT", "Side income"),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="income")
+
+    assert summaries == [
+        pluggy.CategorySummary(
+            category="Salary",
+            total=Decimal("1000.00"),
+            count=1,
+            percentage=Decimal("87.0"),
+        ),
+        pluggy.CategorySummary(
+            category="Side income",
+            total=Decimal("150.00"),
+            count=1,
+            percentage=Decimal("13.0"),
+        ),
+    ]
+
+
+def test_aggregate_by_category_all_direction() -> None:
+    rows = [
+        _tx("100.00", "CREDIT", "Salary"),
+        _tx("40.00", "DEBIT", "Food"),
+        _tx("20.00", "DEBIT", "Transportation"),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="all")
+
+    assert summaries == [
+        pluggy.CategorySummary(
+            category="Salary",
+            total=Decimal("100.00"),
+            count=1,
+            percentage=Decimal("62.5"),
+        ),
+        pluggy.CategorySummary(
+            category="Transportation",
+            total=Decimal("-20.00"),
+            count=1,
+            percentage=Decimal("-12.5"),
+        ),
+        pluggy.CategorySummary(
+            category="Food",
+            total=Decimal("-40.00"),
+            count=1,
+            percentage=Decimal("-25.0"),
+        ),
+    ]
+
+
+def test_aggregate_by_category_empty_transactions() -> None:
+    assert pluggy.aggregate_by_category([], direction="expense") == []
+
+
+def test_aggregate_by_category_single_category() -> None:
+    rows = [
+        _tx("10.00", "DEBIT", "Food"),
+        _tx("20.00", "DEBIT", "Food"),
+        _tx("5.00", "CREDIT", "Salary"),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="expense")
+
+    assert summaries == [
+        pluggy.CategorySummary(
+            category="Food",
+            total=Decimal("30.00"),
+            count=2,
+            percentage=Decimal("100.0"),
+        )
+    ]
+
+
+def test_aggregate_by_category_percentages_sum_to_100() -> None:
+    rows = [
+        _tx("1.00", "DEBIT", "One"),
+        _tx("1.00", "DEBIT", "Two"),
+        _tx("1.00", "DEBIT", "Three"),
+    ]
+
+    summaries = pluggy.aggregate_by_category(rows, direction="expense")
+    percentages_total = sum((summary.percentage for summary in summaries), Decimal("0"))
+
+    assert abs(percentages_total - Decimal("100")) <= Decimal("0.2")
 
 
 def test_list_item_transactions_with_env_filters_by_account_type(

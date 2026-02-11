@@ -1,4 +1,5 @@
 import calendar
+import datetime
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -85,8 +86,14 @@ def _format_currency_amount(currency_code: str, value: Decimal) -> str:
     return f"{currency_code} {value.quantize(Decimal('0.01'))}"
 
 
-def _format_currency_amount_grouped(currency_code: str, value: Decimal) -> str:
+def _format_currency_amount_grouped(
+    currency_code: str,
+    value: Decimal,
+    show_sign: bool = False,
+) -> str:
     quantized = value.quantize(Decimal("0.01"))
+    if show_sign:
+        return f"{currency_code} {quantized:+,.2f}"
     return f"{currency_code} {quantized:,.2f}"
 
 
@@ -137,6 +144,13 @@ def _normalize_transaction_type_filter(value: str | None) -> str | None:
     return normalized
 
 
+def _normalize_spending_direction(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in ("expense", "income", "all"):
+        raise ValueError("Option --direction must be one of: expense, income, all.")
+    return normalized
+
+
 def _normalize_excluded_categories(
     config_categories: list[str],
     cli_categories: list[str],
@@ -174,6 +188,13 @@ def _derive_invoice_cycle_date_range(
     end_date = date(current.year, current.month, end_day)
 
     return start_date.isoformat(), end_date.isoformat()
+
+
+def _current_month_date_range(
+    today: datetime.date | None = None,
+) -> tuple[str, str]:
+    current = today or datetime.date.today()
+    return current.replace(day=1).isoformat(), current.isoformat()
 
 
 def _format_transaction_amount(amount: Decimal, transaction_type: str) -> str:
@@ -225,6 +246,55 @@ def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
         typer.echo(
             f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  {row[3]:<{widths[3]}}  {row[4]:<{widths[4]}}  {row[5]:<{widths[5]}}  {row[6]:<{widths[6]}}"
         )
+
+
+def _print_spending_table(
+    rows: list[pluggy.CategorySummary],
+    currency_code: str,
+    direction: str,
+    top_n: int | None = None,
+) -> tuple[Decimal, int]:
+    display_rows = rows[:top_n] if top_n is not None else rows
+    show_sign = direction == "all"
+
+    table_rows = [
+        (
+            _truncate_text(row.category),
+            _format_currency_amount_grouped(
+                currency_code,
+                row.total,
+                show_sign=show_sign,
+            ),
+            str(row.count),
+            f"{row.percentage.quantize(Decimal('0.1'))}%",
+        )
+        for row in display_rows
+    ]
+    headers = ("Category", "Amount", "Count", "% of total")
+    widths = [len(column) for column in headers]
+
+    for row in table_rows:
+        widths = [
+            max(current, len(value)) for current, value in zip(widths, row, strict=True)
+        ]
+
+    typer.echo(
+        f"{headers[0]:<{widths[0]}}  {headers[1]:>{widths[1]}}  {headers[2]:>{widths[2]}}  {headers[3]:>{widths[3]}}"
+    )
+    typer.echo(
+        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}"
+    )
+    for row in table_rows:
+        typer.echo(
+            f"{row[0]:<{widths[0]}}  {row[1]:>{widths[1]}}  {row[2]:>{widths[2]}}  {row[3]:>{widths[3]}}"
+        )
+
+    if top_n is not None and len(rows) > top_n:
+        typer.echo(f"... and {len(rows) - top_n} more categories")
+
+    total_amount = sum((row.total for row in rows), Decimal("0"))
+    total_count = sum(row.count for row in rows)
+    return total_amount, total_count
 
 
 def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
@@ -715,3 +785,110 @@ def account_transactions(
     if len(displayed_rows) < len(rows):
         typer.echo("Use --limit to show more.")
     typer.echo(f"TOTAL: {_format_total_amount(total_value)}")
+
+
+@account_app.command("spending")
+def account_spending(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+    date_from: str | None = typer.Option(
+        None,
+        "--from",
+        "-f",
+        help="Start date (YYYY-MM-DD). Defaults to first day of current month.",
+    ),
+    date_to: str | None = typer.Option(
+        None,
+        "--to",
+        "-t",
+        help="End date (YYYY-MM-DD). Defaults to today.",
+    ),
+    direction: str = typer.Option(
+        "expense",
+        "--direction",
+        "-d",
+        help="Filter direction: expense, income, or all.",
+    ),
+    account_type: str | None = typer.Option(
+        None,
+        "--type",
+        help="Filter by account type: bank or credit.",
+    ),
+    top_n: int | None = typer.Option(
+        None,
+        "--top",
+        help="Show only top N categories.",
+    ),
+) -> None:
+    """Show spending breakdown by category."""
+    try:
+        config = load_config()
+        normalized_from = _validate_iso_date(date_from, "--from")
+        normalized_to = _validate_iso_date(date_to, "--to")
+        normalized_direction = _normalize_spending_direction(direction)
+        normalized_account_type = (
+            account_type.strip().upper() if isinstance(account_type, str) else None
+        )
+        if normalized_account_type not in (None, "BANK", "CREDIT"):
+            raise ValueError("Option --type must be either 'bank' or 'credit'.")
+        if top_n is not None and top_n <= 0:
+            raise ValueError("Option --top must be a positive integer.")
+
+        default_from, default_to = _current_month_date_range()
+        if normalized_from is None:
+            normalized_from = default_from
+        if normalized_to is None:
+            normalized_to = default_to
+    except (ConfigError, ValueError) as exc:
+        _exit_with_error(exc)
+
+    try:
+        rows = pluggy.list_item_transactions_with_env(
+            item_id,
+            date_from=normalized_from,
+            date_to=normalized_to,
+            account_type_filter=normalized_account_type,
+        )
+    except pluggy.PluggyError as exc:
+        _exit_with_error(exc)
+
+    currency_code = str(config.currency)
+    rows = [row for row in rows if row.currency_code.upper() == currency_code]
+    if not rows:
+        typer.echo("No transactions found for this period.")
+        return
+
+    summaries = pluggy.aggregate_by_category(rows, direction=normalized_direction)
+    if not summaries:
+        if normalized_direction == "expense":
+            typer.echo("No expense transactions found for this period.")
+        elif normalized_direction == "income":
+            typer.echo("No income transactions found for this period.")
+        else:
+            typer.echo("No transactions found for this period.")
+        return
+
+    typer.echo(f"Spending summary ({normalized_from} to {normalized_to})")
+    if normalized_direction == "expense":
+        typer.echo("Direction: expenses")
+    elif normalized_direction == "income":
+        typer.echo("Direction: income")
+    else:
+        typer.echo("Direction: all (expenses negative, income positive)")
+    typer.echo("")
+
+    grand_total, total_count = _print_spending_table(
+        summaries,
+        currency_code=currency_code,
+        direction=normalized_direction,
+        top_n=top_n,
+    )
+
+    typer.echo("")
+    typer.echo(
+        "Total: "
+        f"{_format_currency_amount_grouped(currency_code, grand_total, show_sign=normalized_direction == 'all')} "
+        f"across {total_count} transactions"
+    )

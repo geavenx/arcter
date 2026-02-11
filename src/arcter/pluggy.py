@@ -54,6 +54,14 @@ class TransactionRow:
     account_type: str
 
 
+@dataclass(frozen=True, slots=True)
+class CategorySummary:
+    category: str
+    total: Decimal
+    count: int
+    percentage: Decimal
+
+
 def _sanitize(value: str | None) -> str:
     if value is None:
         return ""
@@ -537,6 +545,67 @@ def _parse_transactions(
         )
 
     return rows
+
+
+def aggregate_by_category(
+    transactions: list[TransactionRow],
+    direction: str = "expense",
+) -> list[CategorySummary]:
+    normalized_direction = direction.strip().lower()
+    if normalized_direction not in ("expense", "income", "all"):
+        raise ValueError("direction must be one of: expense, income, all.")
+
+    totals_by_category: dict[str, Decimal] = {}
+    counts_by_category: dict[str, int] = {}
+    grand_total = Decimal("0")
+
+    for transaction in transactions:
+        transaction_type = transaction.type.strip().upper()
+        if normalized_direction == "expense" and transaction_type != "DEBIT":
+            continue
+        if normalized_direction == "income" and transaction_type != "CREDIT":
+            continue
+
+        category = (
+            transaction.category.strip()
+            if isinstance(transaction.category, str) and transaction.category.strip()
+            else "Uncategorized"
+        )
+        absolute_amount = abs(transaction.amount)
+
+        if normalized_direction == "expense":
+            normalized_amount = absolute_amount
+        elif normalized_direction == "income":
+            normalized_amount = absolute_amount
+        else:
+            normalized_amount = (
+                absolute_amount if transaction_type == "CREDIT" else -absolute_amount
+            )
+
+        totals_by_category[category] = (
+            totals_by_category.get(category, Decimal("0")) + normalized_amount
+        )
+        counts_by_category[category] = counts_by_category.get(category, 0) + 1
+        grand_total += absolute_amount
+
+    if not totals_by_category:
+        return []
+
+    summaries = [
+        CategorySummary(
+            category=category,
+            total=total,
+            count=counts_by_category[category],
+            percentage=(
+                ((total / grand_total) * Decimal("100")).quantize(Decimal("0.1"))
+                if grand_total != 0
+                else Decimal("0.0")
+            ),
+        )
+        for category, total in totals_by_category.items()
+    ]
+    summaries.sort(key=lambda row: row.total, reverse=True)
+    return summaries
 
 
 def update_item_with_env(

@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -1565,6 +1566,524 @@ def test_account_transactions_propagates_config_error(
 
     assert result.exit_code == 1
     assert "Config file is not valid TOML" in output
+
+
+def test_account_spending_happy_path_shows_summary_table(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        observed["account_type_filter"] = account_type_filter
+        observed["env"] = env
+        return [
+            TransactionRow(
+                date="2026-02-10",
+                description="Lunch",
+                amount=Decimal("100.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food and drinks",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-09",
+                description="Dinner",
+                amount=Decimal("20.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food and drinks",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-08",
+                description="Online order",
+                amount=Decimal("50.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Shopping",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-01",
+                description="Salary",
+                amount=Decimal("1000.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Salary",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "item-from-arg",
+            "--from",
+            "2026-02-01",
+            "--to",
+            "2026-02-11",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] == "item-from-arg"
+    assert observed["date_from"] == "2026-02-01"
+    assert observed["date_to"] == "2026-02-11"
+    assert observed["account_type_filter"] is None
+    assert observed["env"] is None
+    assert "Spending summary (2026-02-01 to 2026-02-11)" in result.stdout
+    assert "Direction: expenses" in result.stdout
+    assert "Food and drinks" in result.stdout
+    assert "Shopping" in result.stdout
+    assert "BRL 120.00" in result.stdout
+    assert "BRL 50.00" in result.stdout
+    assert "Total: BRL 170.00 across 3 transactions" in result.stdout
+
+
+def test_account_spending_defaults_to_first_day_of_month_and_today(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    class FixedDate(datetime.date):
+        @classmethod
+        def today(cls) -> "FixedDate":
+            return cls(2026, 2, 11)
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        return []
+
+    monkeypatch.setattr("arcter.cli.datetime.date", FixedDate)
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "spending"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert observed["date_from"] == "2026-02-01"
+    assert observed["date_to"] == "2026-02-11"
+    assert "No transactions found for this period." in result.stdout
+
+
+def test_account_spending_passes_custom_date_range(tmp_path: Path, monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        return []
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert observed["date_from"] == "2026-01-01"
+    assert observed["date_to"] == "2026-01-31"
+
+
+def test_account_spending_direction_income(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-10",
+                description="Salary",
+                amount=Decimal("2000.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Salary",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-11",
+                description="Cashback",
+                amount=Decimal("50.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Benefits",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-12",
+                description="Groceries",
+                amount=Decimal("100.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+            "--direction",
+            "income",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Direction: income" in result.stdout
+    assert "Salary" in result.stdout
+    assert "Benefits" in result.stdout
+    assert "Food" not in result.stdout
+    assert "Total: BRL 2,050.00 across 2 transactions" in result.stdout
+
+
+def test_account_spending_top_n(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-10",
+                description="Food",
+                amount=Decimal("500.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-11",
+                description="Shopping",
+                amount=Decimal("400.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Shopping",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-12",
+                description="Transport",
+                amount=Decimal("300.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Transportation",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-13",
+                description="Bills",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Utilities",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Health",
+                amount=Decimal("100.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Healthcare",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+            "--top",
+            "3",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Food" in result.stdout
+    assert "Shopping" in result.stdout
+    assert "Transportation" in result.stdout
+    assert "... and 2 more categories" in result.stdout
+
+
+def test_account_spending_passes_account_type_filter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["account_type_filter"] = account_type_filter
+        return []
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+            "--type",
+            "bank",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert observed["account_type_filter"] == "BANK"
+
+
+def test_account_spending_handles_no_transactions(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return []
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "spending",
+            "--from",
+            "2026-01-01",
+            "--to",
+            "2026-01-31",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "No transactions found for this period." in result.stdout
+
+
+def test_account_spending_rejects_invalid_direction(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "spending", "--direction", "outflow"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Option --direction must be one of: expense, income, all." in output
+
+
+def test_account_spending_rejects_invalid_date(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "spending", "--from", "2026/01/01"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "--from must use YYYY-MM-DD format." in output
+
+
+def test_account_spending_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+        )
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        raise PluggyError(
+            "Pluggy transactions list failed with status 500: Internal Error"
+        )
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "spending"], env=_env(tmp_path))
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Pluggy transactions list failed with status 500: Internal Error" in output
 
 
 def test_account_login_stores_credentials_with_flags(
