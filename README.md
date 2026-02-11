@@ -4,6 +4,14 @@ A personal finance CLI that connects to Brazilian bank accounts via the [Pluggy]
 
 [![CI](https://github.com/geavenx/arcter/actions/workflows/ci.yml/badge.svg)](https://github.com/geavenx/arcter/actions/workflows/ci.yml)
 
+## Features
+
+- Configuration with layered precedence (defaults -> file -> env -> CLI)
+- Pluggy account sync (`update`) and unified balance view (`balance`)
+- Credit card details (`credit`) and savings goal tracking (`goal`)
+- Transaction listing with date/account/type/category filters (`transactions`)
+- Secure Pluggy credential storage via OS keyring (`login` / `logout`)
+
 ## Installation
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
@@ -24,14 +32,35 @@ Arcter stores settings in `~/.config/arcter/config.toml`. Manage them with `arct
 arcter config set salary 5000
 arcter config set currency BRL
 arcter config set savings_goal 25000
+arcter config set pluggy.item_id your-item-id
 arcter config list
 ```
 
+### Pluggy credentials and item ID
+
+Store credentials securely in your system keyring:
+
+```bash
+arcter account login --client-id your-client-id --client-secret your-client-secret
+arcter account login --item-id your-item-id  # optional: also persists pluggy.item_id
+```
+
+Or remove stored credentials:
+
+```bash
+arcter account logout
+```
+
+Resolution precedence:
+
+| Value | Highest -> Lowest |
+|---|---|
+| Item ID | CLI argument -> `PLUGGY_ITEM_ID` env var -> `pluggy.item_id` in config |
+| Client ID / Secret | `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` env vars -> OS keyring |
+
+Environment variables always override stored values.
+
 ### Account commands
-
-All `arcter account` commands accept an optional `ITEM_ID` argument. If omitted, Arcter reads `PLUGGY_ITEM_ID` from the environment.
-
-You also need `PLUGGY_CLIENT_ID` and `PLUGGY_CLIENT_SECRET` set in your environment.
 
 ```bash
 # Refresh bank data
@@ -67,6 +96,7 @@ Default values:
 | `savings_goal` | `500.00` | `ARCTER_SAVINGS_GOAL` |
 | `credit_cards.invoice_due_day` | `30` | `ARCTER_INVOICE_DUE_DAY` |
 | `credit_cards.excluded_categories` | `[]` | — |
+| `pluggy.item_id` | `""` | `PLUGGY_ITEM_ID` |
 
 **Pluggy integration** authenticates with the Pluggy API, then fetches account data (balances, credit card details, transactions) through a central HTTP client with unified error handling. Transaction listing supports server-side pagination and client-side filtering by date range, transaction type, account type, and category exclusions. When no date range is given, Arcter derives one from the configured invoice cycle.
 
@@ -92,3 +122,5 @@ uvx ruff check .
 ```
 
 The CI pipeline runs all three on every push and pull request.
+
+Last reviewed: 2026-02-11

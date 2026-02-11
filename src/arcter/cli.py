@@ -18,7 +18,7 @@ from arcter.config import (
     user_config_path,
 )
 from arcter.constants import APP_NAME
-from arcter import pluggy
+from arcter import credentials, pluggy
 
 app = typer.Typer(name=APP_NAME)
 config_app = typer.Typer(help="Manage CLI configuration values.")
@@ -43,6 +43,11 @@ def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
         ("currency", values["currency"], sources["currency"]),
         ("salary", values["salary"], sources["salary"]),
         ("savings_goal", values["savings_goal"], sources["savings_goal"]),
+        (
+            "pluggy.item_id",
+            values["pluggy.item_id"],
+            sources["pluggy.item_id"],
+        ),
         (
             "credit_cards.invoice_due_day",
             values["credit_cards.invoice_due_day"],
@@ -344,6 +349,76 @@ def config_path() -> None:
     Print the absolute user config file path.
     """
     typer.echo(user_config_path())
+
+
+@account_app.command("login")
+def account_login(
+    client_id: str | None = typer.Option(
+        None,
+        "--client-id",
+        help="Pluggy API client ID.",
+    ),
+    client_secret: str | None = typer.Option(
+        None,
+        "--client-secret",
+        help="Pluggy API client secret.",
+    ),
+    item_id: str | None = typer.Option(
+        None,
+        "--item-id",
+        help="Pluggy item ID to store in config.",
+    ),
+) -> None:
+    """Store Pluggy API credentials in the system keyring."""
+    try:
+        if client_id is None:
+            client_id = typer.prompt("Pluggy Client ID")
+        if client_secret is None:
+            client_secret = typer.prompt("Pluggy Client Secret", hide_input=True)
+
+        client_id = client_id.strip()
+        client_secret = client_secret.strip()
+
+        if not client_id or not client_secret:
+            typer.secho(
+                "Client ID and Client Secret must not be empty.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        credentials.store_credentials(client_id, client_secret)
+        typer.echo("Credentials stored in system keyring.")
+
+        if item_id is not None:
+            item_id = item_id.strip()
+            if not item_id:
+                typer.secho(
+                    "Item ID must not be empty.",
+                    fg=typer.colors.RED,
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+            set_user_config("pluggy.item_id", item_id)
+            typer.echo(f"Set pluggy.item_id = {item_id}")
+    except credentials.CredentialError as exc:
+        _exit_with_error(exc)
+    except ConfigError as exc:
+        _exit_with_error(exc)
+
+
+@account_app.command("logout")
+def account_logout() -> None:
+    """Remove Pluggy API credentials from the system keyring."""
+    try:
+        removed = credentials.delete_credentials()
+    except credentials.CredentialError as exc:
+        _exit_with_error(exc)
+
+    if removed:
+        typer.echo("Credentials removed from system keyring.")
+    else:
+        typer.echo("No credentials found in system keyring.")
 
 
 @account_app.command("update")

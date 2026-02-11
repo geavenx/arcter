@@ -122,7 +122,11 @@ def test_account_update_prefers_argument_item_id_over_environment(
     assert observed["item_id"] == "item-from-arg"
 
 
-def test_account_update_fails_when_credentials_are_missing(tmp_path: Path) -> None:
+def test_account_update_fails_when_credentials_are_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+
     result = runner.invoke(
         app,
         ["account", "update", "item-id"],
@@ -131,12 +135,17 @@ def test_account_update_fails_when_credentials_are_missing(tmp_path: Path) -> No
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
-    assert "Missing required environment variables:" in output
+    assert "Missing Pluggy credentials:" in output
     assert "PLUGGY_CLIENT_ID" in output
     assert "PLUGGY_CLIENT_SECRET" in output
+    assert "arcter account login" in output
 
 
-def test_account_update_fails_when_item_id_is_missing(tmp_path: Path) -> None:
+def test_account_update_fails_when_item_id_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+
     result = runner.invoke(
         app,
         ["account", "update"],
@@ -153,6 +162,7 @@ def test_account_update_fails_when_item_id_is_missing(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "Missing Pluggy item ID." in output
     assert "PLUGGY_ITEM_ID" in output
+    assert "arcter config set pluggy.item_id" in output
 
 
 def test_account_update_fails_when_auth_returns_error(
@@ -308,7 +318,11 @@ def test_account_balance_handles_no_eligible_accounts(
     )
 
 
-def test_account_balance_fails_when_credentials_are_missing(tmp_path: Path) -> None:
+def test_account_balance_fails_when_credentials_are_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+
     result = runner.invoke(
         app,
         ["account", "balance", "item-id"],
@@ -317,12 +331,17 @@ def test_account_balance_fails_when_credentials_are_missing(tmp_path: Path) -> N
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
-    assert "Missing required environment variables:" in output
+    assert "Missing Pluggy credentials:" in output
     assert "PLUGGY_CLIENT_ID" in output
     assert "PLUGGY_CLIENT_SECRET" in output
+    assert "arcter account login" in output
 
 
-def test_account_balance_fails_when_item_id_is_missing(tmp_path: Path) -> None:
+def test_account_balance_fails_when_item_id_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+
     result = runner.invoke(
         app,
         ["account", "balance"],
@@ -339,6 +358,7 @@ def test_account_balance_fails_when_item_id_is_missing(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "Missing Pluggy item ID." in output
     assert "PLUGGY_ITEM_ID" in output
+    assert "arcter config set pluggy.item_id" in output
 
 
 def test_account_balance_fails_when_fetch_returns_error(
@@ -830,7 +850,11 @@ def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> 
     assert "Pluggy accounts list failed with status 500: Internal Error" in output
 
 
-def test_account_credit_fails_when_credentials_are_missing(tmp_path: Path) -> None:
+def test_account_credit_fails_when_credentials_are_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+
     result = runner.invoke(
         app,
         ["account", "credit", "item-id"],
@@ -839,12 +863,17 @@ def test_account_credit_fails_when_credentials_are_missing(tmp_path: Path) -> No
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
-    assert "Missing required environment variables:" in output
+    assert "Missing Pluggy credentials:" in output
     assert "PLUGGY_CLIENT_ID" in output
     assert "PLUGGY_CLIENT_SECRET" in output
+    assert "arcter account login" in output
 
 
-def test_account_credit_fails_when_item_id_is_missing(tmp_path: Path) -> None:
+def test_account_credit_fails_when_item_id_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+
     result = runner.invoke(
         app,
         ["account", "credit"],
@@ -861,6 +890,7 @@ def test_account_credit_fails_when_item_id_is_missing(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "Missing Pluggy item ID." in output
     assert "PLUGGY_ITEM_ID" in output
+    assert "arcter config set pluggy.item_id" in output
 
 
 def test_account_transactions_happy_path_shows_table(
@@ -1504,7 +1534,10 @@ def test_account_transactions_propagates_pluggy_error(
 
 def test_account_transactions_fails_when_credentials_are_missing(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+
     result = runner.invoke(
         app,
         ["account", "transactions", "item-id"],
@@ -1513,9 +1546,10 @@ def test_account_transactions_fails_when_credentials_are_missing(
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
-    assert "Missing required environment variables:" in output
+    assert "Missing Pluggy credentials:" in output
     assert "PLUGGY_CLIENT_ID" in output
     assert "PLUGGY_CLIENT_SECRET" in output
+    assert "arcter account login" in output
 
 
 def test_account_transactions_propagates_config_error(
@@ -1531,3 +1565,179 @@ def test_account_transactions_propagates_config_error(
 
     assert result.exit_code == 1
     assert "Config file is not valid TOML" in output
+
+
+def test_account_login_stores_credentials_with_flags(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """arcter account login --client-id X --client-secret Y stores in keyring."""
+    observed: dict[str, str] = {}
+
+    def fake_store_credentials(client_id: str, client_secret: str) -> None:
+        observed["client_id"] = client_id
+        observed["client_secret"] = client_secret
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.store_credentials", fake_store_credentials
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "login",
+            "--client-id",
+            "my-client-id",
+            "--client-secret",
+            "my-client-secret",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Credentials stored in system keyring." in result.stdout
+    assert observed["client_id"] == "my-client-id"
+    assert observed["client_secret"] == "my-client-secret"
+
+
+def test_account_login_stores_item_id_in_config(tmp_path: Path, monkeypatch) -> None:
+    """arcter account login --item-id writes pluggy.item_id to config."""
+
+    def fake_store_credentials(client_id: str, client_secret: str) -> None:
+        pass
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.store_credentials", fake_store_credentials
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "login",
+            "--client-id",
+            "cid",
+            "--client-secret",
+            "csecret",
+            "--item-id",
+            "item-123",
+        ],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Credentials stored in system keyring." in result.stdout
+    assert "Set pluggy.item_id = item-123" in result.stdout
+
+    config_file = tmp_path / "arcter" / "config.toml"
+    assert config_file.exists()
+    content = config_file.read_text(encoding="utf-8")
+    assert "item-123" in content
+
+
+def test_account_login_prompts_interactively(tmp_path: Path, monkeypatch) -> None:
+    """When flags are omitted, login prompts for credentials."""
+    observed: dict[str, str] = {}
+
+    def fake_store_credentials(client_id: str, client_secret: str) -> None:
+        observed["client_id"] = client_id
+        observed["client_secret"] = client_secret
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.store_credentials", fake_store_credentials
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "login"],
+        input="prompted-id\nprompted-secret\n",
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "Credentials stored in system keyring." in result.stdout
+    assert observed["client_id"] == "prompted-id"
+    assert observed["client_secret"] == "prompted-secret"
+
+
+def test_account_login_rejects_empty_credentials(tmp_path: Path) -> None:
+    """Empty client ID or secret causes exit code 1."""
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "login",
+            "--client-id",
+            "  ",
+            "--client-secret",
+            "secret",
+        ],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "must not be empty" in output
+
+
+def test_account_login_fails_on_keyring_error(tmp_path: Path, monkeypatch) -> None:
+    """CredentialError during store causes exit code 1."""
+    from arcter.credentials import CredentialError
+
+    def fake_store_credentials(client_id: str, client_secret: str) -> None:
+        raise CredentialError("Failed to store credentials in system keyring: locked")
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.store_credentials", fake_store_credentials
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "account",
+            "login",
+            "--client-id",
+            "cid",
+            "--client-secret",
+            "csecret",
+        ],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Failed to store credentials" in output
+
+
+def test_account_logout_clears_credentials(tmp_path: Path, monkeypatch) -> None:
+    """arcter account logout calls delete_credentials and reports success."""
+
+    def fake_delete_credentials() -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.delete_credentials", fake_delete_credentials
+    )
+
+    result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Credentials removed from system keyring." in result.stdout
+
+
+def test_account_logout_reports_when_no_credentials_found(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When no credentials exist, logout reports that."""
+
+    def fake_delete_credentials() -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "arcter.cli.credentials.delete_credentials", fake_delete_credentials
+    )
+
+    result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "No credentials found in system keyring." in result.stdout

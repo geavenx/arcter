@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from arcter import credentials
+
 BASE_URL = "https://api.pluggy.ai"
 DEFAULT_TIMEOUT_SECONDS = 15.0
 
@@ -58,16 +60,34 @@ def _sanitize(value: str | None) -> str:
     return value.strip()
 
 
+def _load_config_item_id() -> str:
+    """Load pluggy.item_id from config, returning empty string on any failure."""
+    try:
+        from arcter.config import load_config
+
+        config = load_config()
+        return config.pluggy.item_id
+    except Exception:
+        return ""
+
+
 def resolve_item_id(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
+    config_item_id: str | None = None,
 ) -> str:
     env_vars = env or os.environ
-    resolved_item_id = _sanitize(item_id) or _sanitize(env_vars.get("PLUGGY_ITEM_ID"))
+    resolved_item_id = (
+        _sanitize(item_id)
+        or _sanitize(env_vars.get("PLUGGY_ITEM_ID"))
+        or _sanitize(config_item_id)
+    )
 
     if not resolved_item_id:
         raise PluggyError(
-            "Missing Pluggy item ID. Provide ITEM_ID argument or set PLUGGY_ITEM_ID."
+            "Missing Pluggy item ID. "
+            "Provide ITEM_ID argument, set PLUGGY_ITEM_ID, "
+            "or run 'arcter config set pluggy.item_id <id>'."
         )
 
     return resolved_item_id
@@ -80,6 +100,15 @@ def resolve_credentials(
     client_id = _sanitize(env_vars.get("PLUGGY_CLIENT_ID"))
     client_secret = _sanitize(env_vars.get("PLUGGY_CLIENT_SECRET"))
 
+    if not client_id or not client_secret:
+        stored = credentials.load_credentials()
+        if stored is not None:
+            stored_id, stored_secret = stored
+            if not client_id:
+                client_id = stored_id
+            if not client_secret:
+                client_secret = stored_secret
+
     missing: list[str] = []
     if not client_id:
         missing.append("PLUGGY_CLIENT_ID")
@@ -88,7 +117,8 @@ def resolve_credentials(
 
     if missing:
         raise PluggyError(
-            f"Missing required environment variables: {', '.join(missing)}"
+            f"Missing Pluggy credentials: {', '.join(missing)}. "
+            "Set environment variables or run 'arcter account login'."
         )
 
     return client_id, client_secret
@@ -513,7 +543,8 @@ def update_item_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
 ) -> str:
-    resolved_item_id = resolve_item_id(item_id, env=env)
+    config_item_id = _load_config_item_id()
+    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
     update_item(resolved_item_id, api_key)
@@ -524,7 +555,8 @@ def list_item_balances_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
 ) -> list[BalanceRow]:
-    resolved_item_id = resolve_item_id(item_id, env=env)
+    config_item_id = _load_config_item_id()
+    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
     return list_item_balances(resolved_item_id, api_key)
@@ -534,7 +566,8 @@ def list_item_credit_cards_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
 ) -> list[CreditCardRow]:
-    resolved_item_id = resolve_item_id(item_id, env=env)
+    config_item_id = _load_config_item_id()
+    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
     return list_item_credit_cards(resolved_item_id, api_key)
@@ -547,7 +580,8 @@ def list_item_transactions_with_env(
     account_type_filter: str | None = None,
     env: Mapping[str, str] | None = None,
 ) -> list[TransactionRow]:
-    resolved_item_id = resolve_item_id(item_id, env=env)
+    config_item_id = _load_config_item_id()
+    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
 

@@ -45,6 +45,7 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
     assert "savings_goal" in lowered_output
     assert "credit_cards.invoice_due_day" in lowered_output
     assert "credit_cards.excluded_categories" in lowered_output
+    assert "pluggy.item_id" in lowered_output
 
 
 def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
@@ -108,6 +109,7 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "savings_goal" in set_help.stdout.lower()
     assert "invoice_due_day" in set_help.stdout.lower()
     assert "excluded_categorie" in set_help.stdout.lower()
+    assert "pluggy.item_id" in set_help.stdout.lower()
 
     assert unset_help.exit_code == 0
     assert "salary" in unset_help.stdout.lower()
@@ -115,6 +117,7 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "savings_goal" in unset_help.stdout.lower()
     assert "invoice_due_day" in unset_help.stdout.lower()
     assert "excluded_categorie" in unset_help.stdout.lower()
+    assert "pluggy.item_id" in unset_help.stdout.lower()
 
 
 def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None:
@@ -219,6 +222,14 @@ def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
     assert invoice_lines
     assert "30" in invoice_lines[0]
     assert "default" in invoice_lines[0]
+
+    pluggy_lines = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("pluggy.item_id")
+    ]
+    assert pluggy_lines
+    assert "default" in pluggy_lines[0]
 
 
 def test_list_shows_default_excluded_categories(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ class ConfigKey(str, Enum):
     savings_goal = "savings_goal"
     credit_cards_invoice_due_day = "credit_cards.invoice_due_day"
     credit_cards_excluded_categories = "credit_cards.excluded_categories"
+    pluggy_item_id = "pluggy.item_id"
 
 
 VALID_KEYS = tuple(key.value for key in ConfigKey)
@@ -90,6 +91,12 @@ class CreditCardsConfig(BaseModel):
         return normalized
 
 
+class PluggyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str = Field(default="")
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +104,7 @@ class Config(BaseModel):
     salary: Decimal = Field(default=Decimal("200.00"), decimal_places=2)
     savings_goal: Decimal = Field(default=Decimal("500.00"), decimal_places=2)
     credit_cards: CreditCardsConfig = Field(default_factory=CreditCardsConfig)
+    pluggy: PluggyConfig = Field(default_factory=PluggyConfig)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -221,6 +229,9 @@ def load_env_config() -> dict[str, Any]:
     if "ARCTER_INVOICE_DUE_DAY" in os.environ:
         config["credit_cards.invoice_due_day"] = os.environ["ARCTER_INVOICE_DUE_DAY"]
 
+    if "PLUGGY_ITEM_ID" in os.environ:
+        config["pluggy.item_id"] = os.environ["PLUGGY_ITEM_ID"]
+
     return _normalize_input_map(config)
 
 
@@ -236,6 +247,9 @@ def _serialize_for_toml(key: str, value: Any) -> Any:
 
     if key == "credit_cards.excluded_categories":
         return [str(entry) for entry in list(value)]
+
+    if key == "pluggy.item_id":
+        return str(value)
 
     return value
 
@@ -283,6 +297,9 @@ def _normalize_cli_value(key: str, raw_value: str) -> Any:
     if key == "credit_cards.excluded_categories":
         return [entry.strip() for entry in raw_value.split(",") if entry.strip()]
 
+    if key == "pluggy.item_id":
+        return raw_value.strip()
+
     return raw_value
 
 
@@ -322,6 +339,9 @@ def _value_for_output(key: str, value: Any) -> str:
 
     if key == "credit_cards.excluded_categories":
         return json.dumps(list(value))
+
+    if key == "pluggy.item_id":
+        return str(value) if value else ""
 
     return str(value)
 
@@ -389,6 +409,9 @@ def list_config_as_toml() -> str:
         "credit_cards": {
             "invoice_due_day": int(config.credit_cards.invoice_due_day),
             "excluded_categories": list(config.credit_cards.excluded_categories),
+        },
+        "pluggy": {
+            "item_id": str(config.pluggy.item_id),
         },
     }
     return tomli_w.dumps(toml_payload)

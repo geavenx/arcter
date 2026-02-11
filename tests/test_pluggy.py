@@ -120,6 +120,7 @@ def test_list_item_balances_with_env_uses_env_item_id(monkeypatch) -> None:
 
     monkeypatch.setattr(pluggy, "authenticate", fake_authenticate)
     monkeypatch.setattr(pluggy, "list_item_balances", fake_list_item_balances)
+    monkeypatch.setattr(pluggy, "_load_config_item_id", lambda: "")
 
     rows = pluggy.list_item_balances_with_env(
         item_id=None,
@@ -152,6 +153,7 @@ def test_list_item_balances_with_env_prefers_arg_item_id(monkeypatch) -> None:
 
     monkeypatch.setattr(pluggy, "authenticate", fake_authenticate)
     monkeypatch.setattr(pluggy, "list_item_balances", fake_list_item_balances)
+    monkeypatch.setattr(pluggy, "_load_config_item_id", lambda: "")
 
     rows = pluggy.list_item_balances_with_env(
         item_id="item-from-arg",
@@ -655,6 +657,7 @@ def test_list_item_transactions_with_env_filters_by_account_type(
     monkeypatch.setattr(
         pluggy, "list_account_transactions", fake_list_account_transactions
     )
+    monkeypatch.setattr(pluggy, "_load_config_item_id", lambda: "")
 
     rows = pluggy.list_item_transactions_with_env(
         item_id=None,
@@ -674,3 +677,77 @@ def test_list_item_transactions_with_env_filters_by_account_type(
     assert len(rows) == 1
     assert rows[0].account_name == "Checking"
     assert rows[0].account_type == "BANK"
+
+
+def test_resolve_credentials_falls_back_to_keyring(monkeypatch) -> None:
+    """When env vars are missing, credentials come from keyring."""
+    monkeypatch.setattr(
+        pluggy.credentials, "load_credentials", lambda: ("kr-id", "kr-secret")
+    )
+
+    client_id, client_secret = pluggy.resolve_credentials(env={})
+
+    assert client_id == "kr-id"
+    assert client_secret == "kr-secret"
+
+
+def test_resolve_credentials_prefers_env_over_keyring(monkeypatch) -> None:
+    """Env vars take priority over keyring values."""
+    monkeypatch.setattr(
+        pluggy.credentials, "load_credentials", lambda: ("kr-id", "kr-secret")
+    )
+
+    client_id, client_secret = pluggy.resolve_credentials(
+        env={"PLUGGY_CLIENT_ID": "env-id", "PLUGGY_CLIENT_SECRET": "env-secret"}
+    )
+
+    assert client_id == "env-id"
+    assert client_secret == "env-secret"
+
+
+def test_resolve_credentials_partial_env_override(monkeypatch) -> None:
+    """One value from env, the other from keyring."""
+    monkeypatch.setattr(
+        pluggy.credentials, "load_credentials", lambda: ("kr-id", "kr-secret")
+    )
+
+    client_id, client_secret = pluggy.resolve_credentials(
+        env={"PLUGGY_CLIENT_ID": "env-id"}
+    )
+
+    assert client_id == "env-id"
+    assert client_secret == "kr-secret"
+
+
+def test_resolve_item_id_falls_back_to_config() -> None:
+    """When no arg or env var, config_item_id is used."""
+    result = pluggy.resolve_item_id(
+        item_id=None, env={}, config_item_id="config-item-id"
+    )
+    assert result == "config-item-id"
+
+
+def test_resolve_item_id_prefers_env_over_config() -> None:
+    """Env var takes priority over config_item_id."""
+    result = pluggy.resolve_item_id(
+        item_id=None,
+        env={"PLUGGY_ITEM_ID": "env-item-id"},
+        config_item_id="config-item-id",
+    )
+    assert result == "env-item-id"
+
+
+def test_resolve_item_id_prefers_arg_over_everything() -> None:
+    """CLI argument takes priority over env and config."""
+    result = pluggy.resolve_item_id(
+        item_id="arg-item-id",
+        env={"PLUGGY_ITEM_ID": "env-item-id"},
+        config_item_id="config-item-id",
+    )
+    assert result == "arg-item-id"
+
+
+def test_resolve_item_id_raises_when_all_sources_empty() -> None:
+    """Error message mentions all three sources when nothing is found."""
+    with pytest.raises(pluggy.PluggyError, match="arcter config set pluggy.item_id"):
+        pluggy.resolve_item_id(item_id=None, env={}, config_item_id="")
