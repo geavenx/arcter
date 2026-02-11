@@ -48,6 +48,11 @@ def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
             values["credit_cards.invoice_due_day"],
             sources["credit_cards.invoice_due_day"],
         ),
+        (
+            "credit_cards.excluded_categories",
+            values["credit_cards.excluded_categories"],
+            sources["credit_cards.excluded_categories"],
+        ),
     ]
     headers = ("Key", "Value", "Source")
     widths = [len(column) for column in headers]
@@ -125,6 +130,20 @@ def _normalize_transaction_type_filter(value: str | None) -> str | None:
         raise ValueError("Option --type must be either 'credit' or 'debit'.")
 
     return normalized
+
+
+def _normalize_excluded_categories(
+    config_categories: list[str],
+    cli_categories: list[str],
+) -> set[str]:
+    normalized_categories: set[str] = set()
+
+    for value in [*config_categories, *cli_categories]:
+        normalized = value.strip()
+        if normalized:
+            normalized_categories.add(normalized.casefold())
+
+    return normalized_categories
 
 
 def _derive_invoice_cycle_date_range(
@@ -533,6 +552,11 @@ def account_transactions(
         "--account-type",
         help="Filter by account type: bank or credit.",
     ),
+    excludes: list[str] | None = typer.Option(
+        None,
+        "--excludes",
+        help="Exclude transactions by category. Repeat option to add multiple categories.",
+    ),
     limit: int = typer.Option(
         50,
         "--limit",
@@ -546,17 +570,21 @@ def account_transactions(
     user_passed_date_filter = date_from is not None or date_to is not None
 
     try:
+        config = load_config()
         normalized_from = _validate_iso_date(date_from, "--from")
         normalized_to = _validate_iso_date(date_to, "--to")
         normalized_transaction_type = _normalize_transaction_type_filter(
             transaction_type
         )
         normalized_account_type = _normalize_account_type_filter(account_type)
+        excluded_categories = _normalize_excluded_categories(
+            list(config.credit_cards.excluded_categories),
+            excludes or [],
+        )
         if limit <= 0:
             raise ValueError("Option --limit must be a positive integer.")
 
         if normalized_from is None or normalized_to is None:
-            config = load_config()
             cycle_from, cycle_to = _derive_invoice_cycle_date_range(
                 int(config.credit_cards.invoice_due_day)
             )
@@ -582,6 +610,14 @@ def account_transactions(
             row
             for row in rows
             if row.type.strip().upper() == normalized_transaction_type
+        ]
+
+    if excluded_categories:
+        rows = [
+            row
+            for row in rows
+            if row.category is None
+            or row.category.strip().casefold() not in excluded_categories
         ]
 
     if not rows:

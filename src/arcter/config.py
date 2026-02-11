@@ -20,6 +20,7 @@ class ConfigKey(str, Enum):
     salary = "salary"
     savings_goal = "savings_goal"
     credit_cards_invoice_due_day = "credit_cards.invoice_due_day"
+    credit_cards_excluded_categories = "credit_cards.excluded_categories"
 
 
 VALID_KEYS = tuple(key.value for key in ConfigKey)
@@ -55,6 +56,38 @@ class CreditCardsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     invoice_due_day: int = Field(default=30, ge=1, le=31)
+    excluded_categories: list[str] = Field(default_factory=list)
+
+    @field_validator("excluded_categories", mode="before")
+    @classmethod
+    def normalize_excluded_categories(cls, value: Any) -> Any:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            candidates: list[Any] = value.split(",")
+        elif isinstance(value, tuple):
+            candidates = list(value)
+        elif isinstance(value, list):
+            candidates = value
+        else:
+            return value
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            text = str(candidate).strip()
+            if not text:
+                continue
+
+            dedupe_key = text.casefold()
+            if dedupe_key in seen:
+                continue
+
+            seen.add(dedupe_key)
+            normalized.append(text)
+
+        return normalized
 
 
 class Config(BaseModel):
@@ -201,6 +234,9 @@ def _serialize_for_toml(key: str, value: Any) -> Any:
     if key == "credit_cards.invoice_due_day":
         return int(value)
 
+    if key == "credit_cards.excluded_categories":
+        return [str(entry) for entry in list(value)]
+
     return value
 
 
@@ -244,6 +280,9 @@ def _normalize_cli_value(key: str, raw_value: str) -> Any:
                 "Use an integer between 1 and 31."
             ) from exc
 
+    if key == "credit_cards.excluded_categories":
+        return [entry.strip() for entry in raw_value.split(",") if entry.strip()]
+
     return raw_value
 
 
@@ -280,6 +319,9 @@ def _value_for_output(key: str, value: Any) -> str:
 
     if key == "credit_cards.invoice_due_day":
         return str(int(value))
+
+    if key == "credit_cards.excluded_categories":
+        return json.dumps(list(value))
 
     return str(value)
 
@@ -346,6 +388,7 @@ def list_config_as_toml() -> str:
         "savings_goal": float(Decimal(config.savings_goal)),
         "credit_cards": {
             "invoice_due_day": int(config.credit_cards.invoice_due_day),
+            "excluded_categories": list(config.credit_cards.excluded_categories),
         },
     }
     return tomli_w.dumps(toml_payload)

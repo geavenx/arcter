@@ -44,6 +44,7 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
     assert "currency" in lowered_output
     assert "savings_goal" in lowered_output
     assert "credit_cards.invoice_due_day" in lowered_output
+    assert "credit_cards.excluded_categories" in lowered_output
 
 
 def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
@@ -94,6 +95,7 @@ def test_list_supports_json_and_toml_formats(tmp_path: Path) -> None:
     assert "salary = 123.45" in toml_result.stdout
     assert "[credit_cards]" in toml_result.stdout
     assert "invoice_due_day = 30" in toml_result.stdout
+    assert "excluded_categories = []" in toml_result.stdout
 
 
 def test_set_and_unset_help_include_valid_keys() -> None:
@@ -104,13 +106,15 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "salary" in set_help.stdout.lower()
     assert "currency" in set_help.stdout.lower()
     assert "savings_goal" in set_help.stdout.lower()
-    assert "credit_cards.invoice_due" in set_help.stdout.lower()
+    assert "invoice_due_day" in set_help.stdout.lower()
+    assert "excluded_categorie" in set_help.stdout.lower()
 
     assert unset_help.exit_code == 0
     assert "salary" in unset_help.stdout.lower()
     assert "currency" in unset_help.stdout.lower()
     assert "savings_goal" in unset_help.stdout.lower()
-    assert "credit_cards.invoice_due" in unset_help.stdout.lower()
+    assert "invoice_due_day" in unset_help.stdout.lower()
+    assert "excluded_categorie" in unset_help.stdout.lower()
 
 
 def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None:
@@ -169,6 +173,40 @@ def test_set_invoice_due_day_rejects_invalid_value(tmp_path: Path) -> None:
     assert "less than or equal to 31" in output
 
 
+def test_set_excluded_categories_writes_nested_credit_cards_table(
+    tmp_path: Path,
+) -> None:
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "credit_cards.excluded_categories", "Transfer, Shopping"],
+        env=_env(tmp_path),
+    )
+
+    assert set_result.exit_code == 0
+    assert (
+        'Set credit_cards.excluded_categories = ["Transfer", "Shopping"]'
+        in set_result.stdout
+    )
+
+    config_file = tmp_path / "arcter" / "config.toml"
+    content = config_file.read_text(encoding="utf-8")
+    assert "[credit_cards]" in content
+    assert "excluded_categories" in content
+    assert '"Transfer"' in content
+    assert '"Shopping"' in content
+
+    get_result = runner.invoke(
+        app,
+        ["config", "get", "credit_cards.excluded_categories"],
+        env=_env(tmp_path),
+    )
+    assert get_result.exit_code == 0
+    assert (
+        'credit_cards.excluded_categories = ["Transfer", "Shopping"] '
+        "(source: file)" in get_result.stdout
+    )
+
+
 def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
     result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
 
@@ -181,3 +219,17 @@ def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
     assert invoice_lines
     assert "30" in invoice_lines[0]
     assert "default" in invoice_lines[0]
+
+
+def test_list_shows_default_excluded_categories(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    excluded_lines = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("credit_cards.excluded_categories")
+    ]
+    assert excluded_lines
+    assert "[]" in excluded_lines[0]
+    assert "default" in excluded_lines[0]

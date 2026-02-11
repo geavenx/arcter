@@ -990,9 +990,13 @@ def test_account_transactions_passes_date_filter_options(
         fake_list_item_transactions_with_env,
     )
 
-    def fail_load_config() -> Config:
-        raise AssertionError(
-            "load_config should not be called when --from and --to are provided."
+    def fake_load_config() -> Config:
+        observed["load_config_called"] = True
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            credit_cards={"invoice_due_day": 30, "excluded_categories": ["Transfer"]},
         )
 
     def fail_derive_invoice_cycle_date_range(
@@ -1003,7 +1007,7 @@ def test_account_transactions_passes_date_filter_options(
             "Invoice cycle should not be derived when explicit dates are provided."
         )
 
-    monkeypatch.setattr("arcter.cli.load_config", fail_load_config)
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
         "arcter.cli._derive_invoice_cycle_date_range",
         fail_derive_invoice_cycle_date_range,
@@ -1028,6 +1032,7 @@ def test_account_transactions_passes_date_filter_options(
     assert observed["date_to"] == "2026-01-31"
     assert observed["account_type_filter"] is None
     assert observed["env"] is None
+    assert observed["load_config_called"] is True
     assert "No transactions found between 2026-01-01 and 2026-01-31." in result.stdout
 
 
@@ -1158,6 +1163,230 @@ def test_account_transactions_filters_by_transaction_type(
     assert "-200.00" not in result.stdout
     assert "Showing 1 of 1 transactions." in result.stdout
     assert "TOTAL: +1,500.00" in result.stdout
+
+
+def test_account_transactions_excludes_categories_from_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            credit_cards={
+                "invoice_due_day": 30,
+                "excluded_categories": ["food", "Transfer"],
+            },
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-01-30", "2026-02-28")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Pending txn",
+                amount=Decimal("50"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="PENDING",
+                category=None,
+                account_name="Visa Platinum",
+                account_type="CREDIT",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli._derive_invoice_cycle_date_range",
+        fake_derive_invoice_cycle_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Transfer" not in result.stdout
+    assert "Food" not in result.stdout
+    assert "PENDING" in result.stdout
+    assert "Showing 1 of 1 transactions." in result.stdout
+    assert "TOTAL: -50.00" in result.stdout
+
+
+def test_account_transactions_excludes_categories_from_cli_option(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            credit_cards={"invoice_due_day": 30, "excluded_categories": []},
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-01-30", "2026-02-28")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli._derive_invoice_cycle_date_range",
+        fake_derive_invoice_cycle_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--excludes", "transfer"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "+1,500.00" not in result.stdout
+    assert "-200.00" in result.stdout
+    assert "Showing 1 of 1 transactions." in result.stdout
+    assert "TOTAL: -200.00" in result.stdout
+
+
+def test_account_transactions_combines_config_and_cli_excluded_categories(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            credit_cards={"invoice_due_day": 30, "excluded_categories": ["Food"]},
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-01-30", "2026-02-28")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("1500.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.cli._derive_invoice_cycle_date_range",
+        fake_derive_invoice_cycle_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(
+        app,
+        ["account", "transactions", "--excludes", "transfer"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0
+    assert "No transactions found for this Pluggy item." in result.stdout
 
 
 def test_account_transactions_respects_limit_option(
