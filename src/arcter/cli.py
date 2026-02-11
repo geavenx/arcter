@@ -1,3 +1,4 @@
+from decimal import Decimal
 from enum import Enum
 
 import typer
@@ -54,6 +55,57 @@ def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
     typer.echo(f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}")
     for key, value, source in rows:
         typer.echo(f"{key:<{widths[0]}}  {value:<{widths[1]}}  {source:<{widths[2]}}")
+
+
+def _format_balance_value(value: Decimal | None) -> str:
+    if value is None:
+        return "N/A"
+    return str(value.quantize(Decimal("0.01")))
+
+
+def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
+    table_rows = [
+        (row.type, row.name, _format_balance_value(row.balance), row.currency_code)
+        for row in rows
+    ]
+    headers = ("Type", "Name", "Balance", "Currency")
+    widths = [len(column) for column in headers]
+
+    for row in table_rows:
+        widths = [
+            max(current, len(value)) for current, value in zip(widths, row, strict=True)
+        ]
+
+    typer.echo(
+        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}  {headers[3]:<{widths[3]}}"
+    )
+    typer.echo(
+        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}"
+    )
+    for account_type, name, balance, currency in table_rows:
+        typer.echo(
+            f"{account_type:<{widths[0]}}  {name:<{widths[1]}}  {balance:<{widths[2]}}  {currency:<{widths[3]}}"
+        )
+
+
+def _print_balance_totals(rows: list[pluggy.BalanceRow]) -> None:
+    totals_by_currency: dict[str, Decimal] = {}
+    for row in rows:
+        if row.balance is None:
+            continue
+        totals_by_currency[row.currency_code] = (
+            totals_by_currency.get(row.currency_code, Decimal("0")) + row.balance
+        )
+
+    if not totals_by_currency:
+        typer.echo("")
+        typer.echo("Totals by currency: no numeric balances available.")
+        return
+
+    typer.echo("")
+    typer.echo("Totals by currency:")
+    for currency_code, total in sorted(totals_by_currency.items()):
+        typer.echo(f"- {currency_code}: {_format_balance_value(total)}")
 
 
 @config_app.command("set")
@@ -151,3 +203,26 @@ def account_update(
         _exit_with_error(exc)
 
     typer.echo(f"Updated Pluggy item {resolved_item_id}.")
+
+
+@account_app.command("balance")
+def account_balance(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+) -> None:
+    """
+    Show current balances for BANK and CREDIT accounts.
+    """
+    try:
+        rows = pluggy.list_item_balances_with_env(item_id)
+    except pluggy.PluggyError as exc:
+        _exit_with_error(exc)
+
+    if not rows:
+        typer.echo("No BANK or CREDIT accounts were found for this Pluggy item.")
+        return
+
+    _print_balance_table(rows)
+    _print_balance_totals(rows)

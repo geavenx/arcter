@@ -1,4 +1,6 @@
 from collections.abc import Mapping
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 import json
 import os
 from typing import Any
@@ -11,6 +13,14 @@ DEFAULT_TIMEOUT_SECONDS = 15.0
 
 class PluggyError(Exception):
     """Raised when Pluggy integration operations fail."""
+
+
+@dataclass(frozen=True, slots=True)
+class BalanceRow:
+    type: str
+    name: str
+    balance: Decimal | None
+    currency_code: str
 
 
 def _sanitize(value: str | None) -> str:
@@ -86,7 +96,8 @@ def _request_json(
     headers: Mapping[str, str],
     operation: str,
     json_payload: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
+    params: Mapping[str, Any] | None = None,
+) -> Any:
     normalized_path = path if path.startswith("/") else f"/{path}"
     url = f"{BASE_URL}{normalized_path}"
 
@@ -96,6 +107,8 @@ def _request_json(
     }
     if json_payload is not None:
         request_kwargs["json"] = json_payload
+    if params is not None:
+        request_kwargs["params"] = dict(params)
 
     try:
         response = httpx.request(method, url, **request_kwargs)
@@ -149,6 +162,86 @@ def update_item(item_id: str, api_key: str) -> None:
     )
 
 
+def _extract_account_entries(payload: Any) -> list[Mapping[str, Any]]:
+    if isinstance(payload, list):
+        if not all(isinstance(entry, Mapping) for entry in payload):
+            raise PluggyError(
+                "Pluggy accounts list returned malformed account entries."
+            )
+        return [entry for entry in payload if isinstance(entry, Mapping)]
+
+    if isinstance(payload, Mapping):
+        for key in ("results", "items", "data"):
+            if key in payload:
+                entries = payload[key]
+                if not isinstance(entries, list):
+                    raise PluggyError(
+                        "Pluggy accounts list returned an invalid payload format."
+                    )
+                if not all(isinstance(entry, Mapping) for entry in entries):
+                    raise PluggyError(
+                        "Pluggy accounts list returned malformed account entries."
+                    )
+                return [entry for entry in entries if isinstance(entry, Mapping)]
+
+    raise PluggyError("Pluggy accounts list returned an invalid payload format.")
+
+
+def _parse_balance(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def list_item_balances(item_id: str, api_key: str) -> list[BalanceRow]:
+    payload = _request_json(
+        method="GET",
+        path="/accounts",
+        headers={"accept": "application/json", "X-API-KEY": api_key},
+        operation="accounts list",
+        params={"itemId": item_id},
+    )
+    accounts = _extract_account_entries(payload)
+
+    rows: list[BalanceRow] = []
+    for account in accounts:
+        account_type_raw = account.get("type")
+        account_type = (
+            account_type_raw.strip().upper()
+            if isinstance(account_type_raw, str)
+            else str(account_type_raw or "").strip().upper()
+        )
+        if account_type not in ("BANK", "CREDIT"):
+            continue
+
+        name_raw = account.get("name")
+        name = name_raw.strip() if isinstance(name_raw, str) else ""
+        if not name:
+            name = "Unnamed account"
+
+        currency_raw = account.get("currencyCode")
+        currency_code = (
+            currency_raw.strip().upper() if isinstance(currency_raw, str) else ""
+        )
+        if not currency_code:
+            currency_code = "N/A"
+
+        rows.append(
+            BalanceRow(
+                type=account_type,
+                name=name,
+                balance=_parse_balance(account.get("balance")),
+                currency_code=currency_code,
+            )
+        )
+
+    return rows
+
+
 def update_item_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
@@ -158,3 +251,13 @@ def update_item_with_env(
     api_key = authenticate(client_id, client_secret)
     update_item(resolved_item_id, api_key)
     return resolved_item_id
+
+
+def list_item_balances_with_env(
+    item_id: str | None,
+    env: Mapping[str, str] | None = None,
+) -> list[BalanceRow]:
+    resolved_item_id = resolve_item_id(item_id, env=env)
+    client_id, client_secret = resolve_credentials(env=env)
+    api_key = authenticate(client_id, client_secret)
+    return list_item_balances(resolved_item_id, api_key)
