@@ -68,6 +68,11 @@ def _format_currency_amount(currency_code: str, value: Decimal) -> str:
     return f"{currency_code} {value.quantize(Decimal('0.01'))}"
 
 
+def _format_currency_amount_grouped(currency_code: str, value: Decimal) -> str:
+    quantized = value.quantize(Decimal("0.01"))
+    return f"{currency_code} {quantized:,.2f}"
+
+
 def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
     table_rows = [
         (row.type, row.name, _format_balance_value(row.balance), row.currency_code)
@@ -231,6 +236,72 @@ def account_balance(
 
     _print_balance_table(rows)
     _print_balance_totals(rows)
+
+
+@account_app.command("credit")
+def account_credit(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+) -> None:
+    """
+    Show credit card details for connected accounts.
+    """
+    try:
+        rows = pluggy.list_item_credit_cards_with_env(item_id)
+    except pluggy.PluggyError as exc:
+        _exit_with_error(exc)
+
+    if not rows:
+        typer.echo("No credit card accounts found for this Pluggy item.")
+        return
+
+    for index, row in enumerate(rows):
+        card_header = f"{row.name} (****{row.number})" if row.number else row.name
+        typer.echo(card_header)
+
+        brand_parts = [part for part in (row.brand, row.level) if part]
+        brand_value = " ".join(brand_parts) if brand_parts else "N/A"
+        typer.echo(f"  Brand:      {brand_value}")
+
+        if row.status and row.holder_type:
+            status_value = f"{row.status} ({row.holder_type})"
+        elif row.status:
+            status_value = row.status
+        elif row.holder_type:
+            status_value = row.holder_type
+        else:
+            status_value = "N/A"
+        typer.echo(f"  Status:     {status_value}")
+
+        balance_value = (
+            _format_currency_amount_grouped(row.currency_code, row.balance)
+            if row.balance is not None
+            else "N/A"
+        )
+        due_suffix = f"  (due: {row.balance_due_date})" if row.balance_due_date else ""
+        typer.echo(f"  Balance:    {balance_value}{due_suffix}")
+
+        if row.minimum_payment is not None:
+            typer.echo(
+                f"  Min. payment: {_format_currency_amount_grouped(row.currency_code, row.minimum_payment)}"
+            )
+
+        if row.credit_limit is not None:
+            credit_limit_line = (
+                "  Credit limit: "
+                f"{_format_currency_amount_grouped(row.currency_code, row.credit_limit)}"
+            )
+            if row.available_credit_limit is not None:
+                credit_limit_line += (
+                    "  (available: "
+                    f"{_format_currency_amount_grouped(row.currency_code, row.available_credit_limit)})"
+                )
+            typer.echo(credit_limit_line)
+
+        if index < len(rows) - 1:
+            typer.echo("")
 
 
 @account_app.command("goal")

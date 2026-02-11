@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from arcter.cli import app
 from arcter.config import Config, ConfigError
-from arcter.pluggy import BalanceRow, PluggyError
+from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError
 
 runner = CliRunner()
 
@@ -666,3 +666,198 @@ def test_account_goal_propagates_config_error(tmp_path: Path, monkeypatch) -> No
 
     assert result.exit_code == 1
     assert "Config file is not valid TOML" in output
+
+
+def test_account_credit_shows_detailed_credit_card_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    observed: dict[str, str | None] = {}
+
+    def fake_list_item_credit_cards_with_env(
+        item_id: str | None,
+    ) -> list[CreditCardRow]:
+        observed["item_id"] = item_id
+        return [
+            CreditCardRow(
+                name="Itau Uniclass 2.0 Mastercard Platinum",
+                number="1234",
+                balance=Decimal("142.41"),
+                currency_code="BRL",
+                credit_limit=Decimal("51800"),
+                available_credit_limit=Decimal("51300"),
+                balance_due_date="2020-07-17",
+                minimum_payment=Decimal("100"),
+                brand="MASTERCARD",
+                level="PLATINUM",
+                status="ACTIVE",
+                holder_type="MAIN",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        fake_list_item_credit_cards_with_env,
+    )
+
+    result = runner.invoke(
+        app, ["account", "credit", "item-from-arg"], env=_env(tmp_path)
+    )
+
+    assert result.exit_code == 0
+    assert observed["item_id"] == "item-from-arg"
+    assert "Itau Uniclass 2.0 Mastercard Platinum (****1234)" in result.stdout
+    assert "Brand:      MASTERCARD PLATINUM" in result.stdout
+    assert "Status:     ACTIVE (MAIN)" in result.stdout
+    assert "Balance:    BRL 142.41  (due: 2020-07-17)" in result.stdout
+    assert "Min. payment: BRL 100.00" in result.stdout
+    assert "Credit limit: BRL 51,800.00  (available: BRL 51,300.00)" in result.stdout
+
+
+def test_account_credit_shows_blank_line_between_multiple_cards(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
+        return [
+            CreditCardRow(
+                name="Card One",
+                number="1234",
+                balance=Decimal("10"),
+                currency_code="BRL",
+                credit_limit=None,
+                available_credit_limit=None,
+                balance_due_date=None,
+                minimum_payment=None,
+                brand="VISA",
+                level=None,
+                status="ACTIVE",
+                holder_type="MAIN",
+            ),
+            CreditCardRow(
+                name="Card Two",
+                number="5678",
+                balance=Decimal("20"),
+                currency_code="BRL",
+                credit_limit=None,
+                available_credit_limit=None,
+                balance_due_date=None,
+                minimum_payment=None,
+                brand="MASTERCARD",
+                level=None,
+                status="ACTIVE",
+                holder_type="MAIN",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        fake_list_item_credit_cards_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Card One (****1234)" in result.stdout
+    assert "Card Two (****5678)" in result.stdout
+    assert "\n\nCard Two (****5678)\n" in result.stdout
+
+
+def test_account_credit_handles_no_credit_cards(tmp_path: Path, monkeypatch) -> None:
+    def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
+        return []
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        fake_list_item_credit_cards_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "No credit card accounts found for this Pluggy item." in result.stdout
+
+
+def test_account_credit_handles_missing_optional_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
+        return [
+            CreditCardRow(
+                name="Simple Card",
+                number="",
+                balance=Decimal("55"),
+                currency_code="USD",
+                credit_limit=None,
+                available_credit_limit=None,
+                balance_due_date=None,
+                minimum_payment=None,
+                brand=None,
+                level=None,
+                status=None,
+                holder_type=None,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        fake_list_item_credit_cards_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+
+    assert result.exit_code == 0
+    assert "Simple Card" in result.stdout
+    assert "Simple Card (****" not in result.stdout
+    assert "Brand:      N/A" in result.stdout
+    assert "Status:     N/A" in result.stdout
+    assert "Balance:    USD 55.00" in result.stdout
+    assert "Min. payment:" not in result.stdout
+    assert "Credit limit:" not in result.stdout
+
+
+def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+    def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
+        raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
+
+    monkeypatch.setattr(
+        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        fake_list_item_credit_cards_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Pluggy accounts list failed with status 500: Internal Error" in output
+
+
+def test_account_credit_fails_when_credentials_are_missing(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "credit", "item-id"],
+        env=_env(tmp_path),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Missing required environment variables:" in output
+    assert "PLUGGY_CLIENT_ID" in output
+    assert "PLUGGY_CLIENT_SECRET" in output
+
+
+def test_account_credit_fails_when_item_id_is_missing(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "credit"],
+        env=_env(
+            tmp_path,
+            {
+                "PLUGGY_CLIENT_ID": "client-id",
+                "PLUGGY_CLIENT_SECRET": "client-secret",
+            },
+        ),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Missing Pluggy item ID." in output
+    assert "PLUGGY_ITEM_ID" in output

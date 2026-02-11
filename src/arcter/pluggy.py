@@ -23,6 +23,22 @@ class BalanceRow:
     currency_code: str
 
 
+@dataclass(frozen=True, slots=True)
+class CreditCardRow:
+    name: str
+    number: str
+    balance: Decimal | None
+    currency_code: str
+    credit_limit: Decimal | None
+    available_credit_limit: Decimal | None
+    balance_due_date: str | None
+    minimum_payment: Decimal | None
+    brand: str | None
+    level: str | None
+    status: str | None
+    holder_type: str | None
+
+
 def _sanitize(value: str | None) -> str:
     if value is None:
         return ""
@@ -197,6 +213,17 @@ def _parse_balance(value: Any) -> Decimal | None:
         return None
 
 
+def _parse_optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    return normalized
+
+
 def list_item_balances(item_id: str, api_key: str) -> list[BalanceRow]:
     payload = _request_json(
         method="GET",
@@ -242,6 +269,73 @@ def list_item_balances(item_id: str, api_key: str) -> list[BalanceRow]:
     return rows
 
 
+def list_item_credit_cards(item_id: str, api_key: str) -> list[CreditCardRow]:
+    payload = _request_json(
+        method="GET",
+        path="/accounts",
+        headers={"accept": "application/json", "X-API-KEY": api_key},
+        operation="accounts list",
+        params={"itemId": item_id},
+    )
+    accounts = _extract_account_entries(payload)
+
+    rows: list[CreditCardRow] = []
+    for account in accounts:
+        account_type_raw = account.get("type")
+        account_type = (
+            account_type_raw.strip().upper()
+            if isinstance(account_type_raw, str)
+            else str(account_type_raw or "").strip().upper()
+        )
+        if account_type != "CREDIT":
+            continue
+
+        name_raw = account.get("name")
+        name = name_raw.strip() if isinstance(name_raw, str) else ""
+        if not name:
+            name = "Unnamed account"
+
+        number = ""
+        number_raw = account.get("number")
+        if isinstance(number_raw, str):
+            digits = "".join(char for char in number_raw if char.isdigit())
+            if digits:
+                number = digits[-4:]
+
+        currency_raw = account.get("currencyCode")
+        currency_code = (
+            currency_raw.strip().upper() if isinstance(currency_raw, str) else ""
+        )
+        if not currency_code:
+            currency_code = "N/A"
+
+        credit_data_raw = account.get("creditData")
+        credit_data = credit_data_raw if isinstance(credit_data_raw, Mapping) else {}
+
+        rows.append(
+            CreditCardRow(
+                name=name,
+                number=number,
+                balance=_parse_balance(account.get("balance")),
+                currency_code=currency_code,
+                credit_limit=_parse_balance(credit_data.get("creditLimit")),
+                available_credit_limit=_parse_balance(
+                    credit_data.get("availableCreditLimit")
+                ),
+                balance_due_date=_parse_optional_text(
+                    credit_data.get("balanceDueDate")
+                ),
+                minimum_payment=_parse_balance(credit_data.get("minimumPayment")),
+                brand=_parse_optional_text(credit_data.get("brand")),
+                level=_parse_optional_text(credit_data.get("level")),
+                status=_parse_optional_text(credit_data.get("status")),
+                holder_type=_parse_optional_text(credit_data.get("holderType")),
+            )
+        )
+
+    return rows
+
+
 def update_item_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
@@ -261,3 +355,13 @@ def list_item_balances_with_env(
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
     return list_item_balances(resolved_item_id, api_key)
+
+
+def list_item_credit_cards_with_env(
+    item_id: str | None,
+    env: Mapping[str, str] | None = None,
+) -> list[CreditCardRow]:
+    resolved_item_id = resolve_item_id(item_id, env=env)
+    client_id, client_secret = resolve_credentials(env=env)
+    api_key = authenticate(client_id, client_secret)
+    return list_item_credit_cards(resolved_item_id, api_key)
