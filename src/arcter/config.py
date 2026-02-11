@@ -178,7 +178,6 @@ def _normalize_cli_value(key: str, raw_value: str) -> Any:
                 f"Invalid value for '{key}'. Use a numeric value, for example: 2500.00"
             ) from exc
 
-
     return raw_value
 
 
@@ -258,7 +257,7 @@ def list_config_values() -> tuple[dict[str, str], dict[str, str]]:
     values = {
         "currency": _value_for_output("currency", config.currency),
         "salary": _value_for_output("salary", config.salary),
-        "savings_goal": _value_for_output("savings_goal", config.savings_goal)
+        "savings_goal": _value_for_output("savings_goal", config.savings_goal),
     }
     return values, sources
 
@@ -276,6 +275,6 @@ def list_config_as_toml() -> str:
     toml_payload = {
         "currency": values["currency"],
         "salary": float(Decimal(values["salary"])),
-        "savings_goal": float(Decimal(values["savings_goal"]))
+        "savings_goal": float(Decimal(values["savings_goal"])),
     }
     return tomli_w.dumps(toml_payload)
