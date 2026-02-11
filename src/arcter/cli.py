@@ -32,14 +32,21 @@ def _exit_with_error(exc: Exception) -> None:
 
 
 def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
-    rows = [("salary", values["salary"], sources["salary"]), ("currency", values["currency"], sources["currency"])]
+    rows = [
+        ("salary", values["salary"], sources["salary"]),
+        ("currency", values["currency"], sources["currency"]),
+    ]
     headers = ("Key", "Value", "Source")
     widths = [len(column) for column in headers]
 
     for row in rows:
-        widths = [max(current, len(value)) for current, value in zip(widths, row, strict=True)]
+        widths = [
+            max(current, len(value)) for current, value in zip(widths, row, strict=True)
+        ]
 
-    typer.echo(f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}")
+    typer.echo(
+        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}"
+    )
     typer.echo(f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}")
     for key, value, source in rows:
         typer.echo(f"{key:<{widths[0]}}  {value:<{widths[1]}}  {source:<{widths[2]}}")
@@ -56,8 +63,7 @@ def config_set(key: ConfigKey, value: str) -> None:
         _exit_with_error(exc)
 
     typer.echo(
-        f"Set {normalized_key} = {normalized_value} "
-        f"(file: {user_config_path()})"
+        f"Set {normalized_key} = {normalized_value} (file: {user_config_path()})"
     )
 
 
@@ -98,7 +104,7 @@ def config_list(
         "-f",
         help="Output format: table, json, or toml.",
         case_sensitive=False,
-    )
+    ),
 ) -> None:
     """
     List effective configuration values.

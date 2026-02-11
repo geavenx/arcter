@@ -15,7 +15,9 @@ def _env(tmp_path: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def test_set_currency_writes_valid_toml_and_list_is_readable(tmp_path: Path) -> None:
-    set_result = runner.invoke(app, ["config", "set", "currency", "usd"], env=_env(tmp_path))
+    set_result = runner.invoke(
+        app, ["config", "set", "currency", "usd"], env=_env(tmp_path)
+    )
     assert set_result.exit_code == 0
     assert "Set currency = USD" in set_result.stdout
 
@@ -75,8 +77,12 @@ def test_get_reports_env_source_when_env_overrides_file(tmp_path: Path) -> None:
 def test_list_supports_json_and_toml_formats(tmp_path: Path) -> None:
     runner.invoke(app, ["config", "set", "salary", "123.45"], env=_env(tmp_path))
 
-    json_result = runner.invoke(app, ["config", "list", "--format", "json"], env=_env(tmp_path))
-    toml_result = runner.invoke(app, ["config", "list", "--format", "toml"], env=_env(tmp_path))
+    json_result = runner.invoke(
+        app, ["config", "list", "--format", "json"], env=_env(tmp_path)
+    )
+    toml_result = runner.invoke(
+        app, ["config", "list", "--format", "toml"], env=_env(tmp_path)
+    )
 
     assert json_result.exit_code == 0
     assert '"salary"' in json_result.stdout

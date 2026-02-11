@@ -112,7 +112,9 @@ def _load_toml(path: Path) -> dict[str, Any]:
         ) from exc
 
     if not isinstance(raw, dict):
-        raise ConfigFileError(f"Config file must contain key/value pairs at top-level: {path}")
+        raise ConfigFileError(
+            f"Config file must contain key/value pairs at top-level: {path}"
+        )
 
     return _normalize_input_map(raw)
 
@@ -178,7 +180,9 @@ def load_config(cli_overrides: Mapping[str, Any] | None = None) -> Config:
     return _validate_payload(merged)
 
 
-def resolve_config_with_sources(cli_overrides: Mapping[str, Any] | None = None) -> tuple[Config, dict[str, str]]:
+def resolve_config_with_sources(
+    cli_overrides: Mapping[str, Any] | None = None,
+) -> tuple[Config, dict[str, str]]:
     cli_overrides = _normalize_input_map(cli_overrides or {})
     file_config = load_user_config()
     env_config = load_env_config()
@@ -212,10 +216,14 @@ def set_user_config(key: str, raw_value: str) -> tuple[str, str]:
     candidate[normalized_key] = normalized_value
     validated = _validate_payload(candidate)
 
-    data[normalized_key] = _serialize_for_toml(normalized_key, getattr(validated, normalized_key))
+    data[normalized_key] = _serialize_for_toml(
+        normalized_key, getattr(validated, normalized_key)
+    )
     _write_toml(user_config_path(), data)
 
-    return normalized_key, _value_for_output(normalized_key, getattr(validated, normalized_key))
+    return normalized_key, _value_for_output(
+        normalized_key, getattr(validated, normalized_key)
+    )
 
 
 def unset_user_config(key: str) -> bool:
@@ -249,8 +257,7 @@ def list_config_values() -> tuple[dict[str, str], dict[str, str]]:
 def list_config_as_json() -> str:
     values, sources = list_config_values()
     payload = {
-        key: {"value": values[key], "source": sources[key]}
-        for key in VALID_KEYS
+        key: {"value": values[key], "source": sources[key]} for key in VALID_KEYS
     }
     return json.dumps(payload, indent=2)
 
