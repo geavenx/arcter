@@ -42,6 +42,7 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
     assert "currncy" in output
     assert "salary" in lowered_output
     assert "currency" in lowered_output
+    assert "savings_goal" in lowered_output
 
 
 def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
@@ -99,7 +100,9 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert set_help.exit_code == 0
     assert "salary" in set_help.stdout.lower()
     assert "currency" in set_help.stdout.lower()
+    assert "savings_goal" in set_help.stdout.lower()
 
     assert unset_help.exit_code == 0
     assert "salary" in unset_help.stdout.lower()
     assert "currency" in unset_help.stdout.lower()
+    assert "savings_goal" in unset_help.stdout.lower()
