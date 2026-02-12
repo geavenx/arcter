@@ -1,7 +1,7 @@
 [project]
 name = "arcter"
 version = "1.0.0"
-description = "Add your description here"
+description = "Interact with your money in the terminal"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
