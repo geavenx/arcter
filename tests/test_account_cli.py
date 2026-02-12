@@ -14,6 +14,16 @@ from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError, TransactionRow
 runner = CliRunner()
 
 
+def test_account_command_without_args_shows_help() -> None:
+    result = runner.invoke(app, ["account"])
+
+    assert result.exit_code == 0
+    assert "Usage:" in result.stdout
+    assert "login" in result.stdout
+    assert "balance" in result.stdout
+    assert "transactions" in result.stdout
+
+
 def test_account_update_succeeds_with_item_id_argument(
     tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
