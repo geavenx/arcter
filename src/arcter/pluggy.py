@@ -275,6 +275,31 @@ def _parse_optional_text(value: Any) -> str | None:
     return normalized
 
 
+def _normalize_account_entry(
+    account: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    account_type_raw = account.get("type")
+    account_type = (
+        account_type_raw.strip().upper()
+        if isinstance(account_type_raw, str)
+        else str(account_type_raw or "").strip().upper()
+    )
+
+    name_raw = account.get("name")
+    name = name_raw.strip() if isinstance(name_raw, str) else ""
+    if not name:
+        name = "Unnamed account"
+
+    currency_raw = account.get("currencyCode")
+    currency_code = (
+        currency_raw.strip().upper() if isinstance(currency_raw, str) else ""
+    )
+    if not currency_code:
+        currency_code = "N/A"
+
+    return account_type, name, currency_code
+
+
 def list_item_balances(item_id: str, api_key: str) -> list[BalanceRow]:
     payload = _request_json(
         method="GET",
@@ -287,26 +312,9 @@ def list_item_balances(item_id: str, api_key: str) -> list[BalanceRow]:
 
     rows: list[BalanceRow] = []
     for account in accounts:
-        account_type_raw = account.get("type")
-        account_type = (
-            account_type_raw.strip().upper()
-            if isinstance(account_type_raw, str)
-            else str(account_type_raw or "").strip().upper()
-        )
+        account_type, name, currency_code = _normalize_account_entry(account)
         if account_type not in ("BANK", "CREDIT"):
             continue
-
-        name_raw = account.get("name")
-        name = name_raw.strip() if isinstance(name_raw, str) else ""
-        if not name:
-            name = "Unnamed account"
-
-        currency_raw = account.get("currencyCode")
-        currency_code = (
-            currency_raw.strip().upper() if isinstance(currency_raw, str) else ""
-        )
-        if not currency_code:
-            currency_code = "N/A"
 
         rows.append(
             BalanceRow(
@@ -332,19 +340,9 @@ def list_item_credit_cards(item_id: str, api_key: str) -> list[CreditCardRow]:
 
     rows: list[CreditCardRow] = []
     for account in accounts:
-        account_type_raw = account.get("type")
-        account_type = (
-            account_type_raw.strip().upper()
-            if isinstance(account_type_raw, str)
-            else str(account_type_raw or "").strip().upper()
-        )
+        account_type, name, currency_code = _normalize_account_entry(account)
         if account_type != "CREDIT":
             continue
-
-        name_raw = account.get("name")
-        name = name_raw.strip() if isinstance(name_raw, str) else ""
-        if not name:
-            name = "Unnamed account"
 
         number = ""
         number_raw = account.get("number")
@@ -352,13 +350,6 @@ def list_item_credit_cards(item_id: str, api_key: str) -> list[CreditCardRow]:
             digits = "".join(char for char in number_raw if char.isdigit())
             if digits:
                 number = digits[-4:]
-
-        currency_raw = account.get("currencyCode")
-        currency_code = (
-            currency_raw.strip().upper() if isinstance(currency_raw, str) else ""
-        )
-        if not currency_code:
-            currency_code = "N/A"
 
         credit_data_raw = account.get("creditData")
         credit_data = credit_data_raw if isinstance(credit_data_raw, Mapping) else {}
@@ -399,12 +390,7 @@ def list_item_accounts(item_id: str, api_key: str) -> list[dict[str, str]]:
 
     rows: list[dict[str, str]] = []
     for account in accounts:
-        account_type_raw = account.get("type")
-        account_type = (
-            account_type_raw.strip().upper()
-            if isinstance(account_type_raw, str)
-            else str(account_type_raw or "").strip().upper()
-        )
+        account_type, name, _currency_code = _normalize_account_entry(account)
         if account_type not in ("BANK", "CREDIT"):
             continue
 
@@ -412,11 +398,6 @@ def list_item_accounts(item_id: str, api_key: str) -> list[dict[str, str]]:
         account_id = account_id_raw.strip() if isinstance(account_id_raw, str) else ""
         if not account_id:
             continue
-
-        name_raw = account.get("name")
-        name = name_raw.strip() if isinstance(name_raw, str) else ""
-        if not name:
-            name = "Unnamed account"
 
         rows.append({"id": account_id, "name": name, "type": account_type})
 
@@ -608,14 +589,22 @@ def aggregate_by_category(
     return summaries
 
 
-def update_item_with_env(
+def _resolve_and_authenticate(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
-) -> str:
+) -> tuple[str, str]:
     config_item_id = _load_config_item_id()
     resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
     client_id, client_secret = resolve_credentials(env=env)
     api_key = authenticate(client_id, client_secret)
+    return resolved_item_id, api_key
+
+
+def update_item_with_env(
+    item_id: str | None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    resolved_item_id, api_key = _resolve_and_authenticate(item_id, env=env)
     update_item(resolved_item_id, api_key)
     return resolved_item_id
 
@@ -624,10 +613,7 @@ def list_item_balances_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
 ) -> list[BalanceRow]:
-    config_item_id = _load_config_item_id()
-    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
-    client_id, client_secret = resolve_credentials(env=env)
-    api_key = authenticate(client_id, client_secret)
+    resolved_item_id, api_key = _resolve_and_authenticate(item_id, env=env)
     return list_item_balances(resolved_item_id, api_key)
 
 
@@ -635,10 +621,7 @@ def list_item_credit_cards_with_env(
     item_id: str | None,
     env: Mapping[str, str] | None = None,
 ) -> list[CreditCardRow]:
-    config_item_id = _load_config_item_id()
-    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
-    client_id, client_secret = resolve_credentials(env=env)
-    api_key = authenticate(client_id, client_secret)
+    resolved_item_id, api_key = _resolve_and_authenticate(item_id, env=env)
     return list_item_credit_cards(resolved_item_id, api_key)
 
 
@@ -649,10 +632,7 @@ def list_item_transactions_with_env(
     account_type_filter: str | None = None,
     env: Mapping[str, str] | None = None,
 ) -> list[TransactionRow]:
-    config_item_id = _load_config_item_id()
-    resolved_item_id = resolve_item_id(item_id, env=env, config_item_id=config_item_id)
-    client_id, client_secret = resolve_credentials(env=env)
-    api_key = authenticate(client_id, client_secret)
+    resolved_item_id, api_key = _resolve_and_authenticate(item_id, env=env)
 
     accounts = list_item_accounts(resolved_item_id, api_key)
     normalized_filter = (
