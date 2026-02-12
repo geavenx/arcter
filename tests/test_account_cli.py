@@ -1497,14 +1497,14 @@ def test_account_transactions_csv_output_contains_header_and_data(
     ) -> list[TransactionRow]:
         """
         Return a fixed list of sample TransactionRow objects used by tests.
-        
+
         Parameters:
             item_id (str | None): Ignored; included to match the real function signature.
             date_from (str | None): Ignored; included to match the real function signature.
             date_to (str | None): Ignored; included to match the real function signature.
             account_type_filter (str | None): Ignored; included to match the real function signature.
             env (dict[str, str] | None): Ignored; included to match the real function signature.
-        
+
         Returns:
             list[TransactionRow]: Two sample transactions:
                 - A posted BRL bank credit "Salary" for 1500.00.
@@ -1585,7 +1585,7 @@ def test_account_transactions_csv_output_no_truncation(
     ) -> list[TransactionRow]:
         """
         Provide a synthetic list containing a single predefined TransactionRow used by tests.
-        
+
         Returns:
             list[TransactionRow]: A list with one TransactionRow populated with fixed test data (date "2026-01-16", long description and account name, amount 100.00 BRL, type "DEBIT", status "POSTED", category "Shopping", account_type "BANK").
         """
@@ -1634,11 +1634,12 @@ def test_account_transactions_csv_output_empty_state(
 ) -> None:
     """
     Verify CSV export produces only the header when there are no transactions.
-    
+
     Patches the transactions provider to return an empty list, invokes the CLI
     with CSV output, and asserts the output contains only the CSV header row and
     does not include a "No transactions found" message.
     """
+
     def fake_list_item_transactions_with_env(
         item_id: str | None,
         date_from: str | None = None,
@@ -1679,14 +1680,14 @@ def test_account_transactions_csv_output_handles_null_category(
     ) -> list[TransactionRow]:
         """
         Return a fixed list of sample transactions matching the provided filters.
-        
+
         Parameters:
             item_id (str | None): Pluggy item identifier to scope transactions; ignored by this fake implementation.
             date_from (str | None): Start date filter in YYYY-MM-DD format; ignored by this fake implementation.
             date_to (str | None): End date filter in YYYY-MM-DD format; ignored by this fake implementation.
             account_type_filter (str | None): Account type filter (e.g., "BANK" or "CREDIT"); ignored by this fake implementation.
             env (dict[str, str] | None): Environment variables to apply when listing transactions; ignored by this fake implementation.
-        
+
         Returns:
             list[TransactionRow]: A list containing a single sample TransactionRow (Salary, posted credit of 1500.00 BRL on 2026-01-15).
         """
@@ -1733,14 +1734,14 @@ def test_account_transactions_json_output_contains_all_fields(
     ) -> list[TransactionRow]:
         """
         Return a fixed list of sample TransactionRow objects used by tests.
-        
+
         Parameters:
             item_id (str | None): Ignored; included to match the real function signature.
             date_from (str | None): Ignored; included to match the real function signature.
             date_to (str | None): Ignored; included to match the real function signature.
             account_type_filter (str | None): Ignored; included to match the real function signature.
             env (dict[str, str] | None): Ignored; included to match the real function signature.
-        
+
         Returns:
             list[TransactionRow]: Two sample transactions:
                 - A posted BRL bank credit "Salary" for 1500.00.
@@ -1816,14 +1817,14 @@ def test_account_transactions_json_output_null_category(
     ) -> list[TransactionRow]:
         """
         Return a fixed list of sample transactions matching the provided filters.
-        
+
         Parameters:
             item_id (str | None): Pluggy item identifier to scope transactions; ignored by this fake implementation.
             date_from (str | None): Start date filter in YYYY-MM-DD format; ignored by this fake implementation.
             date_to (str | None): End date filter in YYYY-MM-DD format; ignored by this fake implementation.
             account_type_filter (str | None): Account type filter (e.g., "BANK" or "CREDIT"); ignored by this fake implementation.
             env (dict[str, str] | None): Environment variables to apply when listing transactions; ignored by this fake implementation.
-        
+
         Returns:
             list[TransactionRow]: A list containing a single sample TransactionRow (Salary, posted credit of 1500.00 BRL on 2026-01-15).
         """
@@ -1869,14 +1870,14 @@ def test_account_transactions_json_output_empty_state(
     ) -> list[TransactionRow]:
         """
         Test stub that simulates listing item transactions and always returns an empty list.
-        
+
         Parameters:
             item_id (str | None): Item identifier (ignored).
             date_from (str | None): Start date filter in YYYY-MM-DD format (ignored).
             date_to (str | None): End date filter in YYYY-MM-DD format (ignored).
             account_type_filter (str | None): Account type filter (ignored).
             env (dict[str, str] | None): Environment variables to use (ignored).
-        
+
         Returns:
             list[TransactionRow]: An empty list representing no transactions.
         """
@@ -1904,9 +1905,10 @@ def test_account_transactions_output_csv_respects_filters(
 ) -> None:
     """
     Verifies that CSV output honors the --type filter and only includes transactions matching the requested transaction type.
-    
+
     Patches the transaction listing to provide both a CREDIT and a DEBIT transaction, runs the CLI with `--output csv --type credit`, and asserts the command succeeds, the CSV contains the expected rows (header + one matching data row), the included row has type `CREDIT`, and transactions not matching the filter (e.g., "Groceries") are omitted.
     """
+
     def fake_list_item_transactions_with_env(
         item_id: str | None,
         date_from: str | None = None,
@@ -1962,9 +1964,10 @@ def test_account_transactions_output_csv_respects_limit(
 ) -> None:
     """
     Verifies that CSV output for the transactions command respects the --limit option.
-    
+
     Sets up ten sample transactions, invokes the CLI with --output csv and --limit 3, and asserts the output contains the CSV header plus three data rows (total 4 CSV rows).
     """
+
     def fake_list_item_transactions_with_env(
         item_id: str | None,
         date_from: str | None = None,
@@ -2015,16 +2018,16 @@ def test_account_transactions_output_default_is_table(
     ) -> list[TransactionRow]:
         """
         Return a fixed list of example transactions for testing purposes.
-        
+
         This test helper ignores most inputs and always returns a single sample TransactionRow representing a posted bank credit (salary) in BRL.
-        
+
         Parameters:
             item_id (str | None): Optional pluggy item identifier; not used by this fake implementation.
             date_from (str | None): Start date filter in ISO format (YYYY-MM-DD); unused here.
             date_to (str | None): End date filter in ISO format (YYYY-MM-DD); unused here.
             account_type_filter (str | None): Filter for account type (e.g., 'BANK' or 'CREDIT'); unused here.
             env (dict[str, str] | None): Environment mapping to simulate runtime environment; unused here.
-        
+
         Returns:
             list[TransactionRow]: A list containing a single sample transaction row with date "2026-01-15", description "Salary", amount 1500.00 BRL, type "CREDIT", status "POSTED", category "Transfer", account name "Checking", and account type "BANK".
         """

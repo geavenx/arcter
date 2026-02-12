@@ -46,7 +46,7 @@ class TransactionOutputFormat(str, Enum):
 def _exit_with_error(exc: Exception) -> None:
     """
     Print an error message in red to stderr and terminate the application with exit code 1.
-    
+
     Parameters:
         exc (Exception): The exception whose message will be printed.
     """
@@ -233,7 +233,7 @@ def _format_total_amount(value: Decimal) -> str:
 def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
     """
     Prints a formatted table of transaction rows to standard output.
-    
+
     Parameters:
         rows (list[pluggy.TransactionRow]): Transaction rows to render. Each row is displayed as a table row with the columns: Date, Account, Type, Amount, Currency, Category, and Status.
     """
@@ -273,7 +273,7 @@ def _print_transaction_csv(rows: list[pluggy.TransactionRow]) -> None:
     """
     Write transaction rows to standard output as CSV using the header:
     Date, Account, Account Type, Type, Amount, Currency, Category, Status, Description.
-    
+
     Parameters:
         rows (list[pluggy.TransactionRow]): Transactions to emit; each transaction becomes one CSV row.
         Amount values are formatted with two decimal places and missing categories are emitted as an empty string.
@@ -311,9 +311,9 @@ def _print_transaction_csv(rows: list[pluggy.TransactionRow]) -> None:
 def _print_transaction_json(rows: list[pluggy.TransactionRow]) -> None:
     """
     Prints the given transaction rows as a formatted JSON array to standard output.
-    
+
     Each transaction is serialized to an object with keys: `date`, `account`, `account_type`, `type`, `amount`, `currency`, `category`, `status`, and `description`. The `amount` value is formatted as a string with two decimal places.
-    
+
     Parameters:
         rows (list[pluggy.TransactionRow]): Transaction rows to serialize and print.
     """
@@ -342,7 +342,7 @@ def _print_spending_table(
 ) -> tuple[Decimal, int]:
     """
     Render a spending-by-category table to standard output.
-    
+
     Parameters:
         rows (list[pluggy.CategorySummary]): Aggregated category summaries; each item is expected to have
             `category`, `total` (Decimal), `count` (int), and `percentage` (Decimal) attributes.
@@ -350,7 +350,7 @@ def _print_spending_table(
         direction (str): Spending direction that determines sign formatting; expected values include
             "expense", "income", or "all".
         top_n (int | None): If provided, limit the displayed rows to the first `top_n` categories.
-    
+
     Returns:
         total_amount (Decimal): Sum of `total` across all provided rows.
         total_count (int): Sum of `count` across all provided rows.
@@ -819,9 +819,9 @@ def account_transactions(
 ) -> None:
     """
     List recent transactions for the connected Pluggy item and render them in the chosen format.
-    
+
     Retrieves transactions for the specified item and applies optional filters (date range, transaction type, account type, excluded categories), limits the number of displayed rows, and outputs results as a table, CSV, or JSON. If no date range is provided, a default invoice-cycle range is derived from configuration.
-    
+
     Parameters:
         item_id (str | None): Pluggy item ID; falls back to the PLUGGY_ITEM_ID environment/config value when omitted.
         date_from (str | None): Start date in ISO format `YYYY-MM-DD`. If omitted, a cycle-based default may be used.
