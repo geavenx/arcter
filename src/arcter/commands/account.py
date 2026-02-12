@@ -1,5 +1,6 @@
 from decimal import Decimal
 from enum import Enum
+from typing import NoReturn
 
 import typer
 
@@ -15,7 +16,7 @@ class TransactionOutputFormat(str, Enum):
     json = "json"
 
 
-def _exit_with_error(exc: Exception) -> None:
+def _exit_with_error(exc: Exception) -> NoReturn:
     typer.secho(str(exc), fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1)
 
@@ -44,6 +45,9 @@ def account_login(
             client_id = typer.prompt("Pluggy Client ID")
         if client_secret is None:
             client_secret = typer.prompt("Pluggy Client Secret", hide_input=True)
+
+        assert client_id is not None
+        assert client_secret is not None
 
         client_id = client_id.strip()
         client_secret = client_secret.strip()

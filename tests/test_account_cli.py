@@ -4,10 +4,11 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+from pydantic_extra_types.currency_code import ISO4217
 from typer.testing import CliRunner
 
 from arcter.cli import app
-from arcter.config import Config, ConfigError
+from arcter.config import Config, ConfigError, CreditCardsConfig
 from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError, TransactionRow
 
 runner = CliRunner()
@@ -601,7 +602,7 @@ def test_account_goal_omits_estimated_line_when_salary_is_zero(
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("0.00"),
             savings_goal=Decimal("500.00"),
         )
@@ -911,10 +912,10 @@ def test_account_transactions_happy_path_shows_table(
 
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30},
+            credit_cards=CreditCardsConfig(invoice_due_day=30),
         )
 
     def fake_derive_invoice_cycle_date_range(
@@ -961,10 +962,12 @@ def test_account_transactions_passes_date_filter_options(
     def fake_load_config() -> Config:
         observed["load_config_called"] = True
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30, "excluded_categories": ["Transfer"]},
+            credit_cards=CreditCardsConfig(
+                invoice_due_day=30, excluded_categories=["Transfer"]
+            ),
         )
 
     def fail_derive_invoice_cycle_date_range(
@@ -1012,10 +1015,10 @@ def test_account_transactions_passes_account_type_filter(
 
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 25},
+            credit_cards=CreditCardsConfig(invoice_due_day=25),
         )
 
     def fake_derive_invoice_cycle_date_range(
@@ -1051,10 +1054,10 @@ def test_account_transactions_filters_by_transaction_type(
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30},
+            credit_cards=CreditCardsConfig(invoice_due_day=30),
         )
 
     def fake_derive_invoice_cycle_date_range(
@@ -1121,13 +1124,12 @@ def test_account_transactions_excludes_categories_from_config(
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={
-                "invoice_due_day": 30,
-                "excluded_categories": ["food", "Transfer"],
-            },
+            credit_cards=CreditCardsConfig(
+                invoice_due_day=30, excluded_categories=["food", "Transfer"]
+            ),
         )
 
     def fake_derive_invoice_cycle_date_range(
@@ -1204,10 +1206,10 @@ def test_account_transactions_excludes_categories_from_cli_option(
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30, "excluded_categories": []},
+            credit_cards=CreditCardsConfig(invoice_due_day=30, excluded_categories=[]),
         )
 
     def fake_derive_invoice_cycle_date_range(
@@ -1276,10 +1278,12 @@ def test_account_transactions_combines_config_and_cli_excluded_categories(
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
-            currency="BRL",
+            currency=ISO4217("BRL"),
             salary=Decimal("200.00"),
             savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30, "excluded_categories": ["Food"]},
+            credit_cards=CreditCardsConfig(
+                invoice_due_day=30, excluded_categories=["Food"]
+            ),
         )
 
     def fake_derive_invoice_cycle_date_range(

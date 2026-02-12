@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from pydantic_extra_types.currency_code import ISO4217
 
 from arcter.config import Config
 from arcter.pluggy import CreditCardRow, TransactionRow
@@ -11,7 +12,7 @@ from arcter.pluggy import CreditCardRow, TransactionRow
 def default_config() -> Config:
     """Standard Config used by most account CLI tests."""
     return Config(
-        currency="BRL",
+        currency=ISO4217("BRL"),
         salary=Decimal("200.00"),
         savings_goal=Decimal("500.00"),
     )

@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import NoReturn
 
 import typer
 
@@ -24,7 +25,7 @@ class OutputFormat(str, Enum):
     toml = "toml"
 
 
-def _exit_with_error(exc: Exception) -> None:
+def _exit_with_error(exc: Exception) -> NoReturn:
     typer.secho(str(exc), fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1)
 
