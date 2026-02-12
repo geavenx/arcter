@@ -13,15 +13,8 @@ from arcter.pluggy import BalanceRow, CreditCardRow, PluggyError, TransactionRow
 runner = CliRunner()
 
 
-def _env(tmp_path: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
-    env = {"XDG_CONFIG_HOME": str(tmp_path)}
-    if extra:
-        env.update(extra)
-    return env
-
-
 def test_account_update_succeeds_with_item_id_argument(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str] = {}
 
@@ -42,8 +35,7 @@ def test_account_update_succeeds_with_item_id_argument(
     result = runner.invoke(
         app,
         ["account", "update", "item-from-arg"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -62,7 +54,7 @@ def test_account_update_succeeds_with_item_id_argument(
 
 
 def test_account_update_reads_item_id_from_environment_when_arg_is_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str] = {}
 
@@ -83,8 +75,7 @@ def test_account_update_reads_item_id_from_environment_when_arg_is_missing(
     result = runner.invoke(
         app,
         ["account", "update"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -99,7 +90,7 @@ def test_account_update_reads_item_id_from_environment_when_arg_is_missing(
 
 
 def test_account_update_prefers_argument_item_id_over_environment(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str] = {}
 
@@ -117,8 +108,7 @@ def test_account_update_prefers_argument_item_id_over_environment(
     result = runner.invoke(
         app,
         ["account", "update", "item-from-arg"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -132,7 +122,7 @@ def test_account_update_prefers_argument_item_id_over_environment(
 
 
 def test_account_update_fails_when_credentials_are_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
@@ -141,7 +131,7 @@ def test_account_update_fails_when_credentials_are_missing(
     result = runner.invoke(
         app,
         ["account", "update", "item-id"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -153,7 +143,7 @@ def test_account_update_fails_when_credentials_are_missing(
 
 
 def test_account_update_fails_when_item_id_is_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
@@ -162,8 +152,7 @@ def test_account_update_fails_when_item_id_is_missing(
     result = runner.invoke(
         app,
         ["account", "update"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -179,7 +168,7 @@ def test_account_update_fails_when_item_id_is_missing(
 
 
 def test_account_update_fails_when_auth_returns_error(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_authenticate(_: str, __: str) -> str:
         raise PluggyError("Pluggy auth failed with status 401: Unauthorized")
@@ -191,8 +180,7 @@ def test_account_update_fails_when_auth_returns_error(
     result = runner.invoke(
         app,
         ["account", "update", "item-id"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -206,7 +194,7 @@ def test_account_update_fails_when_auth_returns_error(
 
 
 def test_account_update_fails_when_update_returns_error(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_authenticate(_: str, __: str) -> str:
         return "api-key"
@@ -222,8 +210,7 @@ def test_account_update_fails_when_update_returns_error(
     result = runner.invoke(
         app,
         ["account", "update", "item-id"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -237,7 +224,7 @@ def test_account_update_fails_when_update_returns_error(
 
 
 def test_account_update_surfaces_timeout_error_message(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_authenticate(_: str, __: str) -> str:
         raise PluggyError("Pluggy auth request timed out. Please try again.")
@@ -249,8 +236,7 @@ def test_account_update_surfaces_timeout_error_message(
     result = runner.invoke(
         app,
         ["account", "update", "item-id"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -264,7 +250,7 @@ def test_account_update_surfaces_timeout_error_message(
 
 
 def test_account_balance_succeeds_with_table_and_currency_totals(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str | None] = {}
 
@@ -302,9 +288,7 @@ def test_account_balance_succeeds_with_table_and_currency_totals(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(
-        app, ["account", "balance", "item-from-arg"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "balance", "item-from-arg"], env=env())
 
     assert result.exit_code == 0
     assert observed["item_id"] == "item-from-arg"
@@ -319,7 +303,7 @@ def test_account_balance_succeeds_with_table_and_currency_totals(
 
 
 def test_account_balance_handles_no_eligible_accounts(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return []
@@ -329,7 +313,7 @@ def test_account_balance_handles_no_eligible_accounts(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "balance"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "balance"], env=env())
 
     assert result.exit_code == 0
     assert (
@@ -338,7 +322,7 @@ def test_account_balance_handles_no_eligible_accounts(
 
 
 def test_account_balance_fails_when_credentials_are_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
@@ -347,7 +331,7 @@ def test_account_balance_fails_when_credentials_are_missing(
     result = runner.invoke(
         app,
         ["account", "balance", "item-id"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -359,7 +343,7 @@ def test_account_balance_fails_when_credentials_are_missing(
 
 
 def test_account_balance_fails_when_item_id_is_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
@@ -368,8 +352,7 @@ def test_account_balance_fails_when_item_id_is_missing(
     result = runner.invoke(
         app,
         ["account", "balance"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -385,7 +368,7 @@ def test_account_balance_fails_when_item_id_is_missing(
 
 
 def test_account_balance_fails_when_fetch_returns_error(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         raise PluggyError("Pluggy accounts list failed with status 401: Unauthorized")
@@ -398,7 +381,7 @@ def test_account_balance_fails_when_fetch_returns_error(
     result = runner.invoke(
         app,
         ["account", "balance", "item-id"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -407,16 +390,12 @@ def test_account_balance_fails_when_fetch_returns_error(
 
 
 def test_account_goal_reports_progress_when_goal_not_reached(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str | None] = {}
 
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(item_id: str | None) -> list[BalanceRow]:
         observed["item_id"] = item_id
@@ -453,9 +432,7 @@ def test_account_goal_reports_progress_when_goal_not_reached(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(
-        app, ["account", "goal", "item-from-arg"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "goal", "item-from-arg"], env=env())
 
     assert result.exit_code == 0
     assert observed["item_id"] == "item-from-arg"
@@ -468,14 +445,10 @@ def test_account_goal_reports_progress_when_goal_not_reached(
 
 
 def test_account_goal_reports_surplus_when_goal_exceeded(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return [
@@ -493,7 +466,7 @@ def test_account_goal_reports_surplus_when_goal_exceeded(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
 
     assert result.exit_code == 0
     assert "Current:    BRL 600.00  (120.0%)" in result.stdout
@@ -502,14 +475,10 @@ def test_account_goal_reports_surplus_when_goal_exceeded(
 
 
 def test_account_goal_reports_exact_goal_as_reached(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return [
@@ -527,7 +496,7 @@ def test_account_goal_reports_exact_goal_as_reached(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
 
     assert result.exit_code == 0
     assert "Current:    BRL 500.00  (100.0%)" in result.stdout
@@ -535,14 +504,10 @@ def test_account_goal_reports_exact_goal_as_reached(
 
 
 def test_account_goal_reports_when_no_bank_accounts_in_currency(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return [
@@ -566,21 +531,17 @@ def test_account_goal_reports_when_no_bank_accounts_in_currency(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
 
     assert result.exit_code == 0
     assert "No BANK accounts found in BRL for this Pluggy item." in result.stdout
 
 
 def test_account_goal_reports_when_all_bank_balances_are_none(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return [
@@ -594,21 +555,17 @@ def test_account_goal_reports_when_all_bank_balances_are_none(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
 
     assert result.exit_code == 0
     assert "No numeric balances available for BANK accounts in BRL." in result.stdout
 
 
 def test_account_goal_respects_custom_currency_filter(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         return [
@@ -632,9 +589,7 @@ def test_account_goal_respects_custom_currency_filter(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(
-        app, ["account", "goal", "--currency", "usd"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "goal", "--currency", "usd"], env=env())
 
     assert result.exit_code == 0
     assert "Savings goal progress (USD):" in result.stdout
@@ -642,7 +597,7 @@ def test_account_goal_respects_custom_currency_filter(
 
 
 def test_account_goal_omits_estimated_line_when_salary_is_zero(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
@@ -667,20 +622,18 @@ def test_account_goal_omits_estimated_line_when_salary_is_zero(
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
 
     assert result.exit_code == 0
     assert "Monthly salary: BRL 0.00" in result.stdout
     assert "Estimated:" not in result.stdout
 
 
-def test_account_goal_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+def test_account_goal_propagates_pluggy_error(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
@@ -691,20 +644,22 @@ def test_account_goal_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> No
         fake_list_item_balances_with_env,
     )
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
     assert "Pluggy accounts list failed with status 500: Internal Error" in output
 
 
-def test_account_goal_propagates_config_error(tmp_path: Path, monkeypatch) -> None:
+def test_account_goal_propagates_config_error(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
         raise ConfigError("Config file is not valid TOML")
 
     monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
 
-    result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "goal"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -712,7 +667,7 @@ def test_account_goal_propagates_config_error(tmp_path: Path, monkeypatch) -> No
 
 
 def test_account_credit_shows_detailed_credit_card_output(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, str | None] = {}
 
@@ -742,9 +697,7 @@ def test_account_credit_shows_detailed_credit_card_output(
         fake_list_item_credit_cards_with_env,
     )
 
-    result = runner.invoke(
-        app, ["account", "credit", "item-from-arg"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "credit", "item-from-arg"], env=env())
 
     assert result.exit_code == 0
     assert observed["item_id"] == "item-from-arg"
@@ -757,7 +710,7 @@ def test_account_credit_shows_detailed_credit_card_output(
 
 
 def test_account_credit_shows_blank_line_between_multiple_cards(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
         return [
@@ -796,7 +749,7 @@ def test_account_credit_shows_blank_line_between_multiple_cards(
         fake_list_item_credit_cards_with_env,
     )
 
-    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "credit"], env=env())
 
     assert result.exit_code == 0
     assert "Card One (****1234)" in result.stdout
@@ -804,7 +757,9 @@ def test_account_credit_shows_blank_line_between_multiple_cards(
     assert "\n\nCard Two (****5678)\n" in result.stdout
 
 
-def test_account_credit_handles_no_credit_cards(tmp_path: Path, monkeypatch) -> None:
+def test_account_credit_handles_no_credit_cards(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
         return []
 
@@ -813,14 +768,14 @@ def test_account_credit_handles_no_credit_cards(tmp_path: Path, monkeypatch) -> 
         fake_list_item_credit_cards_with_env,
     )
 
-    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "credit"], env=env())
 
     assert result.exit_code == 0
     assert "No credit card accounts found for this Pluggy item." in result.stdout
 
 
 def test_account_credit_handles_missing_optional_fields(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
         return [
@@ -845,7 +800,7 @@ def test_account_credit_handles_missing_optional_fields(
         fake_list_item_credit_cards_with_env,
     )
 
-    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "credit"], env=env())
 
     assert result.exit_code == 0
     assert "Simple Card" in result.stdout
@@ -857,7 +812,9 @@ def test_account_credit_handles_missing_optional_fields(
     assert "Credit limit:" not in result.stdout
 
 
-def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+def test_account_credit_propagates_pluggy_error(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
         raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
 
@@ -866,7 +823,7 @@ def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> 
         fake_list_item_credit_cards_with_env,
     )
 
-    result = runner.invoke(app, ["account", "credit"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "credit"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -874,7 +831,7 @@ def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> 
 
 
 def test_account_credit_fails_when_credentials_are_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
@@ -883,7 +840,7 @@ def test_account_credit_fails_when_credentials_are_missing(
     result = runner.invoke(
         app,
         ["account", "credit", "item-id"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -895,7 +852,7 @@ def test_account_credit_fails_when_credentials_are_missing(
 
 
 def test_account_credit_fails_when_item_id_is_missing(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     monkeypatch.setattr(
         "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
@@ -904,8 +861,7 @@ def test_account_credit_fails_when_item_id_is_missing(
     result = runner.invoke(
         app,
         ["account", "credit"],
-        env=_env(
-            tmp_path,
+        env=env(
             {
                 "PLUGGY_CLIENT_ID": "client-id",
                 "PLUGGY_CLIENT_SECRET": "client-secret",
@@ -921,38 +877,10 @@ def test_account_credit_fails_when_item_id_is_missing(
 
 
 def test_account_transactions_happy_path_shows_table(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch, stub_transactions
 ) -> None:
-    observed: dict[str, object] = {"due_day": None}
-
-    def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-            credit_cards={"invoice_due_day": 30},
-        )
-
-    def fake_derive_invoice_cycle_date_range(
-        invoice_due_day: int,
-        reference_date: object | None = None,
-    ) -> tuple[str, str]:
-        observed["due_day"] = invoice_due_day
-        return ("2026-01-30", "2026-02-28")
-
-    def fake_list_item_transactions_with_env(
-        item_id: str | None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        account_type_filter: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> list[TransactionRow]:
-        observed["item_id"] = item_id
-        observed["date_from"] = date_from
-        observed["date_to"] = date_to
-        observed["account_type_filter"] = account_type_filter
-        observed["env"] = env
-        return [
+    observed = stub_transactions(
+        [
             TransactionRow(
                 date="2026-01-15",
                 description="Salary",
@@ -987,20 +915,31 @@ def test_account_transactions_happy_path_shows_table(
                 account_type="CREDIT",
             ),
         ]
-
-    monkeypatch.setattr(
-        "arcter.commands.account.pluggy.list_item_transactions_with_env",
-        fake_list_item_transactions_with_env,
     )
+    observed["due_day"] = None
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency="BRL",
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            credit_cards={"invoice_due_day": 30},
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        observed["due_day"] = invoice_due_day
+        return ("2026-01-30", "2026-02-28")
+
     monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
         "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
 
-    result = runner.invoke(
-        app, ["account", "transactions", "item-from-arg"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "transactions", "item-from-arg"], env=env())
 
     assert result.exit_code == 0
     assert observed["item_id"] == "item-from-arg"
@@ -1024,28 +963,9 @@ def test_account_transactions_happy_path_shows_table(
 
 
 def test_account_transactions_passes_date_filter_options(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch, stub_transactions
 ) -> None:
-    observed: dict[str, object] = {}
-
-    def fake_list_item_transactions_with_env(
-        item_id: str | None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        account_type_filter: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> list[TransactionRow]:
-        observed["item_id"] = item_id
-        observed["date_from"] = date_from
-        observed["date_to"] = date_to
-        observed["account_type_filter"] = account_type_filter
-        observed["env"] = env
-        return []
-
-    monkeypatch.setattr(
-        "arcter.commands.account.pluggy.list_item_transactions_with_env",
-        fake_list_item_transactions_with_env,
-    )
+    observed = stub_transactions([])
 
     def fake_load_config() -> Config:
         observed["load_config_called"] = True
@@ -1080,7 +1000,7 @@ def test_account_transactions_passes_date_filter_options(
             "--to",
             "2026-01-31",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1094,9 +1014,10 @@ def test_account_transactions_passes_date_filter_options(
 
 
 def test_account_transactions_passes_account_type_filter(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch, stub_transactions
 ) -> None:
-    observed: dict[str, object] = {"due_day": None}
+    observed = stub_transactions([])
+    observed["due_day"] = None
 
     def fake_load_config() -> Config:
         return Config(
@@ -1113,24 +1034,6 @@ def test_account_transactions_passes_account_type_filter(
         observed["due_day"] = invoice_due_day
         return ("2026-01-25", "2026-02-25")
 
-    def fake_list_item_transactions_with_env(
-        item_id: str | None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        account_type_filter: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> list[TransactionRow]:
-        observed["item_id"] = item_id
-        observed["date_from"] = date_from
-        observed["date_to"] = date_to
-        observed["account_type_filter"] = account_type_filter
-        observed["env"] = env
-        return []
-
-    monkeypatch.setattr(
-        "arcter.commands.account.pluggy.list_item_transactions_with_env",
-        fake_list_item_transactions_with_env,
-    )
     monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
         "arcter.commands.account.validators.derive_invoice_cycle_date_range",
@@ -1140,7 +1043,7 @@ def test_account_transactions_passes_account_type_filter(
     result = runner.invoke(
         app,
         ["account", "transactions", "--account-type", "bank"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1153,7 +1056,7 @@ def test_account_transactions_passes_account_type_filter(
 
 
 def test_account_transactions_filters_by_transaction_type(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
@@ -1212,7 +1115,7 @@ def test_account_transactions_filters_by_transaction_type(
     )
 
     result = runner.invoke(
-        app, ["account", "transactions", "--type", "credit"], env=_env(tmp_path)
+        app, ["account", "transactions", "--type", "credit"], env=env()
     )
 
     assert result.exit_code == 0
@@ -1223,7 +1126,7 @@ def test_account_transactions_filters_by_transaction_type(
 
 
 def test_account_transactions_excludes_categories_from_config(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
@@ -1295,7 +1198,7 @@ def test_account_transactions_excludes_categories_from_config(
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "transactions"], env=env())
 
     assert result.exit_code == 0
     assert "Transfer" not in result.stdout
@@ -1306,7 +1209,7 @@ def test_account_transactions_excludes_categories_from_config(
 
 
 def test_account_transactions_excludes_categories_from_cli_option(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
@@ -1367,7 +1270,7 @@ def test_account_transactions_excludes_categories_from_cli_option(
     result = runner.invoke(
         app,
         ["account", "transactions", "--excludes", "transfer"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1378,7 +1281,7 @@ def test_account_transactions_excludes_categories_from_cli_option(
 
 
 def test_account_transactions_combines_config_and_cli_excluded_categories(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         return Config(
@@ -1439,7 +1342,7 @@ def test_account_transactions_combines_config_and_cli_excluded_categories(
     result = runner.invoke(
         app,
         ["account", "transactions", "--excludes", "transfer"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1447,7 +1350,7 @@ def test_account_transactions_combines_config_and_cli_excluded_categories(
 
 
 def test_account_transactions_respects_limit_option(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1476,9 +1379,7 @@ def test_account_transactions_respects_limit_option(
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(
-        app, ["account", "transactions", "--limit", "5"], env=_env(tmp_path)
-    )
+    result = runner.invoke(app, ["account", "transactions", "--limit", "5"], env=env())
 
     assert result.exit_code == 0
     assert "Showing 5 of 10 transactions." in result.stdout
@@ -1487,7 +1388,7 @@ def test_account_transactions_respects_limit_option(
 
 
 def test_account_transactions_handles_no_transactions(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1503,14 +1404,14 @@ def test_account_transactions_handles_no_transactions(
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "transactions"], env=env())
 
     assert result.exit_code == 0
     assert "No transactions found for this Pluggy item." in result.stdout
 
 
 def test_account_transactions_csv_output_contains_header_and_data(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1561,7 +1462,7 @@ def test_account_transactions_csv_output_contains_header_and_data(
             "--output",
             "csv",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     lines = result.stdout.strip().splitlines()
@@ -1580,7 +1481,7 @@ def test_account_transactions_csv_output_contains_header_and_data(
 
 
 def test_account_transactions_csv_output_no_truncation(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     long_account_name = "Checking Account For Long Name Validation"
     long_description = "This description should remain complete in csv output"
@@ -1623,7 +1524,7 @@ def test_account_transactions_csv_output_no_truncation(
             "--output",
             "csv",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1633,7 +1534,7 @@ def test_account_transactions_csv_output_no_truncation(
 
 
 def test_account_transactions_csv_output_empty_state(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1652,7 +1553,7 @@ def test_account_transactions_csv_output_empty_state(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "csv"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1664,7 +1565,7 @@ def test_account_transactions_csv_output_empty_state(
 
 
 def test_account_transactions_csv_output_handles_null_category(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1695,7 +1596,7 @@ def test_account_transactions_csv_output_handles_null_category(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "csv"],
-        env=_env(tmp_path),
+        env=env(),
     )
     rows = list(csv.reader(result.stdout.splitlines()))
 
@@ -1705,7 +1606,7 @@ def test_account_transactions_csv_output_handles_null_category(
 
 
 def test_account_transactions_json_output_contains_all_fields(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1747,7 +1648,7 @@ def test_account_transactions_json_output_contains_all_fields(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "json"],
-        env=_env(tmp_path),
+        env=env(),
     )
     data = json.loads(result.stdout)
 
@@ -1773,7 +1674,7 @@ def test_account_transactions_json_output_contains_all_fields(
 
 
 def test_account_transactions_json_output_null_category(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1804,7 +1705,7 @@ def test_account_transactions_json_output_null_category(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "json"],
-        env=_env(tmp_path),
+        env=env(),
     )
     data = json.loads(result.stdout)
 
@@ -1813,7 +1714,7 @@ def test_account_transactions_json_output_null_category(
 
 
 def test_account_transactions_json_output_empty_state(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1832,7 +1733,7 @@ def test_account_transactions_json_output_empty_state(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "json"],
-        env=_env(tmp_path),
+        env=env(),
     )
     data = json.loads(result.stdout)
 
@@ -1842,7 +1743,7 @@ def test_account_transactions_json_output_empty_state(
 
 
 def test_account_transactions_output_csv_respects_filters(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1884,7 +1785,7 @@ def test_account_transactions_output_csv_respects_filters(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "csv", "--type", "credit"],
-        env=_env(tmp_path),
+        env=env(),
     )
     rows = list(csv.reader(result.stdout.splitlines()))
 
@@ -1895,7 +1796,7 @@ def test_account_transactions_output_csv_respects_filters(
 
 
 def test_account_transactions_output_csv_respects_limit(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1927,7 +1828,7 @@ def test_account_transactions_output_csv_respects_limit(
     result = runner.invoke(
         app,
         ["account", "transactions", "--output", "csv", "--limit", "3"],
-        env=_env(tmp_path),
+        env=env(),
     )
     rows = list(csv.reader(result.stdout.splitlines()))
 
@@ -1936,7 +1837,7 @@ def test_account_transactions_output_csv_respects_limit(
 
 
 def test_account_transactions_output_default_is_table(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -1967,7 +1868,7 @@ def test_account_transactions_output_default_is_table(
     result = runner.invoke(
         app,
         ["account", "transactions", "--from", "2026-01-01", "--to", "2026-01-31"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -1977,11 +1878,13 @@ def test_account_transactions_output_default_is_table(
     assert "TOTAL: +1,500.00" in result.stdout
 
 
-def test_account_transactions_rejects_invalid_date_format(tmp_path: Path) -> None:
+def test_account_transactions_rejects_invalid_date_format(
+    tmp_path: Path, env, default_config
+) -> None:
     result = runner.invoke(
         app,
         ["account", "transactions", "--from", "2026/01/01"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -1989,11 +1892,13 @@ def test_account_transactions_rejects_invalid_date_format(tmp_path: Path) -> Non
     assert "--from must use YYYY-MM-DD format." in output
 
 
-def test_account_transactions_rejects_invalid_transaction_type(tmp_path: Path) -> None:
+def test_account_transactions_rejects_invalid_transaction_type(
+    tmp_path: Path, env, default_config
+) -> None:
     result = runner.invoke(
         app,
         ["account", "transactions", "--type", "bank"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2002,7 +1907,7 @@ def test_account_transactions_rejects_invalid_transaction_type(tmp_path: Path) -
 
 
 def test_account_transactions_propagates_pluggy_error(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2020,7 +1925,7 @@ def test_account_transactions_propagates_pluggy_error(
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "transactions"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -2029,6 +1934,8 @@ def test_account_transactions_propagates_pluggy_error(
 
 def test_account_transactions_fails_when_credentials_are_missing(
     tmp_path: Path,
+    env,
+    default_config,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
@@ -2038,7 +1945,7 @@ def test_account_transactions_fails_when_credentials_are_missing(
     result = runner.invoke(
         app,
         ["account", "transactions", "item-id"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2050,14 +1957,14 @@ def test_account_transactions_fails_when_credentials_are_missing(
 
 
 def test_account_transactions_propagates_config_error(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     def fake_load_config() -> Config:
         raise ConfigError("Config file is not valid TOML")
 
     monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
 
-    result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "transactions"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -2065,16 +1972,12 @@ def test_account_transactions_propagates_config_error(
 
 
 def test_account_spending_happy_path_shows_summary_table(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, object] = {}
 
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2152,7 +2055,7 @@ def test_account_spending_happy_path_shows_summary_table(
             "--to",
             "2026-02-11",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2171,7 +2074,7 @@ def test_account_spending_happy_path_shows_summary_table(
 
 
 def test_account_spending_defaults_to_first_day_of_month_and_today(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, object] = {}
 
@@ -2181,11 +2084,7 @@ def test_account_spending_defaults_to_first_day_of_month_and_today(
             return cls(2026, 2, 11)
 
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2205,7 +2104,7 @@ def test_account_spending_defaults_to_first_day_of_month_and_today(
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(app, ["account", "spending"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "spending"], env=env())
 
     assert result.exit_code == 0
     assert observed["date_from"] == "2026-02-01"
@@ -2213,15 +2112,13 @@ def test_account_spending_defaults_to_first_day_of_month_and_today(
     assert "No transactions found for this period." in result.stdout
 
 
-def test_account_spending_passes_custom_date_range(tmp_path: Path, monkeypatch) -> None:
+def test_account_spending_passes_custom_date_range(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     observed: dict[str, object] = {}
 
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2250,7 +2147,7 @@ def test_account_spending_passes_custom_date_range(tmp_path: Path, monkeypatch) 
             "--to",
             "2026-01-31",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2258,13 +2155,11 @@ def test_account_spending_passes_custom_date_range(tmp_path: Path, monkeypatch) 
     assert observed["date_to"] == "2026-01-31"
 
 
-def test_account_spending_direction_income(tmp_path: Path, monkeypatch) -> None:
+def test_account_spending_direction_income(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2327,7 +2222,7 @@ def test_account_spending_direction_income(tmp_path: Path, monkeypatch) -> None:
             "--direction",
             "income",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2338,13 +2233,11 @@ def test_account_spending_direction_income(tmp_path: Path, monkeypatch) -> None:
     assert "Total: BRL 2,050.00 across 2 transactions" in result.stdout
 
 
-def test_account_spending_top_n(tmp_path: Path, monkeypatch) -> None:
+def test_account_spending_top_n(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2429,7 +2322,7 @@ def test_account_spending_top_n(tmp_path: Path, monkeypatch) -> None:
             "--top",
             "3",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2440,16 +2333,12 @@ def test_account_spending_top_n(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_account_spending_passes_account_type_filter(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     observed: dict[str, object] = {}
 
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2479,20 +2368,18 @@ def test_account_spending_passes_account_type_filter(
             "--type",
             "bank",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
     assert observed["account_type_filter"] == "BANK"
 
 
-def test_account_spending_handles_no_transactions(tmp_path: Path, monkeypatch) -> None:
+def test_account_spending_handles_no_transactions(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2519,18 +2406,20 @@ def test_account_spending_handles_no_transactions(tmp_path: Path, monkeypatch) -
             "--to",
             "2026-01-31",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
     assert "No transactions found for this period." in result.stdout
 
 
-def test_account_spending_rejects_invalid_direction(tmp_path: Path) -> None:
+def test_account_spending_rejects_invalid_direction(
+    tmp_path: Path, env, default_config
+) -> None:
     result = runner.invoke(
         app,
         ["account", "spending", "--direction", "outflow"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2538,11 +2427,13 @@ def test_account_spending_rejects_invalid_direction(tmp_path: Path) -> None:
     assert "Option --direction must be one of: expense, income, all." in output
 
 
-def test_account_spending_rejects_invalid_date(tmp_path: Path) -> None:
+def test_account_spending_rejects_invalid_date(
+    tmp_path: Path, env, default_config
+) -> None:
     result = runner.invoke(
         app,
         ["account", "spending", "--from", "2026/01/01"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2550,13 +2441,11 @@ def test_account_spending_rejects_invalid_date(tmp_path: Path) -> None:
     assert "--from must use YYYY-MM-DD format." in output
 
 
-def test_account_spending_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> None:
+def test_account_spending_propagates_pluggy_error(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     def fake_load_config() -> Config:
-        return Config(
-            currency="BRL",
-            salary=Decimal("200.00"),
-            savings_goal=Decimal("500.00"),
-        )
+        return default_config
 
     def fake_list_item_transactions_with_env(
         item_id: str | None,
@@ -2575,7 +2464,7 @@ def test_account_spending_propagates_pluggy_error(tmp_path: Path, monkeypatch) -
         fake_list_item_transactions_with_env,
     )
 
-    result = runner.invoke(app, ["account", "spending"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "spending"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -2583,7 +2472,7 @@ def test_account_spending_propagates_pluggy_error(tmp_path: Path, monkeypatch) -
 
 
 def test_account_login_stores_credentials_with_flags(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     """arcter account login --client-id X --client-secret Y stores in keyring."""
     observed: dict[str, str] = {}
@@ -2606,7 +2495,7 @@ def test_account_login_stores_credentials_with_flags(
             "--client-secret",
             "my-client-secret",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2615,7 +2504,9 @@ def test_account_login_stores_credentials_with_flags(
     assert observed["client_secret"] == "my-client-secret"
 
 
-def test_account_login_stores_item_id_in_config(tmp_path: Path, monkeypatch) -> None:
+def test_account_login_stores_item_id_in_config(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     """arcter account login --item-id writes pluggy.item_id to config."""
 
     def fake_store_credentials(client_id: str, client_secret: str) -> None:
@@ -2637,7 +2528,7 @@ def test_account_login_stores_item_id_in_config(tmp_path: Path, monkeypatch) -> 
             "--item-id",
             "item-123",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2650,7 +2541,9 @@ def test_account_login_stores_item_id_in_config(tmp_path: Path, monkeypatch) -> 
     assert "item-123" in content
 
 
-def test_account_login_prompts_interactively(tmp_path: Path, monkeypatch) -> None:
+def test_account_login_prompts_interactively(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     """When flags are omitted, login prompts for credentials."""
     observed: dict[str, str] = {}
 
@@ -2666,7 +2559,7 @@ def test_account_login_prompts_interactively(tmp_path: Path, monkeypatch) -> Non
         app,
         ["account", "login"],
         input="prompted-id\nprompted-secret\n",
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert result.exit_code == 0
@@ -2675,7 +2568,9 @@ def test_account_login_prompts_interactively(tmp_path: Path, monkeypatch) -> Non
     assert observed["client_secret"] == "prompted-secret"
 
 
-def test_account_login_rejects_empty_credentials(tmp_path: Path) -> None:
+def test_account_login_rejects_empty_credentials(
+    tmp_path: Path, env, default_config
+) -> None:
     """Empty client ID or secret causes exit code 1."""
     result = runner.invoke(
         app,
@@ -2687,7 +2582,7 @@ def test_account_login_rejects_empty_credentials(tmp_path: Path) -> None:
             "--client-secret",
             "secret",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2695,7 +2590,9 @@ def test_account_login_rejects_empty_credentials(tmp_path: Path) -> None:
     assert "must not be empty" in output
 
 
-def test_account_login_fails_on_keyring_error(tmp_path: Path, monkeypatch) -> None:
+def test_account_login_fails_on_keyring_error(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     """CredentialError during store causes exit code 1."""
     from arcter.credentials import CredentialError
 
@@ -2716,7 +2613,7 @@ def test_account_login_fails_on_keyring_error(tmp_path: Path, monkeypatch) -> No
             "--client-secret",
             "csecret",
         ],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -2724,7 +2621,9 @@ def test_account_login_fails_on_keyring_error(tmp_path: Path, monkeypatch) -> No
     assert "Failed to store credentials" in output
 
 
-def test_account_logout_clears_credentials(tmp_path: Path, monkeypatch) -> None:
+def test_account_logout_clears_credentials(
+    tmp_path: Path, env, default_config, monkeypatch
+) -> None:
     """arcter account logout calls delete_credentials and reports success."""
 
     def fake_delete_credentials() -> bool:
@@ -2735,14 +2634,14 @@ def test_account_logout_clears_credentials(tmp_path: Path, monkeypatch) -> None:
         fake_delete_credentials,
     )
 
-    result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "logout"], env=env())
 
     assert result.exit_code == 0
     assert "Credentials removed from system keyring." in result.stdout
 
 
 def test_account_logout_reports_when_no_credentials_found(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch
 ) -> None:
     """When no credentials exist, logout reports that."""
 
@@ -2754,7 +2653,7 @@ def test_account_logout_reports_when_no_credentials_found(
         fake_delete_credentials,
     )
 
-    result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
+    result = runner.invoke(app, ["account", "logout"], env=env())
 
     assert result.exit_code == 0
     assert "No credentials found in system keyring." in result.stdout

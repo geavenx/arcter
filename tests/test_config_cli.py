@@ -7,17 +7,10 @@ from arcter.cli import app
 runner = CliRunner()
 
 
-def _env(tmp_path: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
-    env = {"XDG_CONFIG_HOME": str(tmp_path)}
-    if extra:
-        env.update(extra)
-    return env
-
-
-def test_set_currency_writes_valid_toml_and_list_is_readable(tmp_path: Path) -> None:
-    set_result = runner.invoke(
-        app, ["config", "set", "currency", "usd"], env=_env(tmp_path)
-    )
+def test_set_currency_writes_valid_toml_and_list_is_readable(
+    tmp_path: Path, env
+) -> None:
+    set_result = runner.invoke(app, ["config", "set", "currency", "usd"], env=env())
     assert set_result.exit_code == 0
     assert "Set currency = USD" in set_result.stdout
 
@@ -25,15 +18,15 @@ def test_set_currency_writes_valid_toml_and_list_is_readable(tmp_path: Path) -> 
     assert config_file.exists()
     assert 'currency = "USD"' in config_file.read_text(encoding="utf-8")
 
-    list_result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+    list_result = runner.invoke(app, ["config", "list"], env=env())
     assert list_result.exit_code == 0
     assert "currency" in list_result.stdout
     assert "USD" in list_result.stdout
     assert "file" in list_result.stdout
 
 
-def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["config", "set", "currncy", "USD"], env=_env(tmp_path))
+def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path, env) -> None:
+    result = runner.invoke(app, ["config", "set", "currncy", "USD"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 2
@@ -48,12 +41,12 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path) -> None:
     assert "pluggy.item_id" in lowered_output
 
 
-def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
+def test_invalid_toml_file_returns_actionable_error(tmp_path: Path, env) -> None:
     config_file = tmp_path / "arcter" / "config.toml"
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text("currency = USD\n", encoding="utf-8")
 
-    result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+    result = runner.invoke(app, ["config", "list"], env=env())
     output = f"{result.stdout}{result.stderr}"
 
     assert result.exit_code == 1
@@ -62,7 +55,7 @@ def test_invalid_toml_file_returns_actionable_error(tmp_path: Path) -> None:
     assert "Traceback" not in output
 
 
-def test_get_reports_env_source_when_env_overrides_file(tmp_path: Path) -> None:
+def test_get_reports_env_source_when_env_overrides_file(tmp_path: Path, env) -> None:
     config_file = tmp_path / "arcter" / "config.toml"
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text('currency = "USD"\n', encoding="utf-8")
@@ -70,7 +63,7 @@ def test_get_reports_env_source_when_env_overrides_file(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         ["config", "get", "currency"],
-        env=_env(tmp_path, {"ARCTER_CURRENCY": "EUR"}),
+        env=env({"ARCTER_CURRENCY": "EUR"}),
     )
 
     assert result.exit_code == 0
@@ -78,15 +71,11 @@ def test_get_reports_env_source_when_env_overrides_file(tmp_path: Path) -> None:
     assert "(source: env)" in result.stdout
 
 
-def test_list_supports_json_and_toml_formats(tmp_path: Path) -> None:
-    runner.invoke(app, ["config", "set", "salary", "123.45"], env=_env(tmp_path))
+def test_list_supports_json_and_toml_formats(tmp_path: Path, env) -> None:
+    runner.invoke(app, ["config", "set", "salary", "123.45"], env=env())
 
-    json_result = runner.invoke(
-        app, ["config", "list", "--format", "json"], env=_env(tmp_path)
-    )
-    toml_result = runner.invoke(
-        app, ["config", "list", "--format", "toml"], env=_env(tmp_path)
-    )
+    json_result = runner.invoke(app, ["config", "list", "--format", "json"], env=env())
+    toml_result = runner.invoke(app, ["config", "list", "--format", "toml"], env=env())
 
     assert json_result.exit_code == 0
     assert '"salary"' in json_result.stdout
@@ -120,7 +109,7 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "pluggy.item_id" in unset_help.stdout.lower()
 
 
-def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None:
+def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path, env) -> None:
     config_file = tmp_path / "arcter" / "config.toml"
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text("salary = 100.00\n", encoding="utf-8")
@@ -128,7 +117,7 @@ def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None
     result = runner.invoke(
         app,
         ["config", "list"],
-        env=_env(tmp_path, {"ARCTER_SAVINGS_GOAL": "900.00"}),
+        env=env({"ARCTER_SAVINGS_GOAL": "900.00"}),
     )
 
     assert result.exit_code == 0
@@ -141,11 +130,13 @@ def test_list_table_uses_correct_source_for_savings_goal(tmp_path: Path) -> None
     assert "env" in savings_goal_lines[0]
 
 
-def test_set_invoice_due_day_writes_nested_credit_cards_table(tmp_path: Path) -> None:
+def test_set_invoice_due_day_writes_nested_credit_cards_table(
+    tmp_path: Path, env
+) -> None:
     set_result = runner.invoke(
         app,
         ["config", "set", "credit_cards.invoice_due_day", "25"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert set_result.exit_code == 0
@@ -157,17 +148,17 @@ def test_set_invoice_due_day_writes_nested_credit_cards_table(tmp_path: Path) ->
     assert "invoice_due_day = 25" in content
 
     get_result = runner.invoke(
-        app, ["config", "get", "credit_cards.invoice_due_day"], env=_env(tmp_path)
+        app, ["config", "get", "credit_cards.invoice_due_day"], env=env()
     )
     assert get_result.exit_code == 0
     assert "credit_cards.invoice_due_day = 25 (source: file)" in get_result.stdout
 
 
-def test_set_invoice_due_day_rejects_invalid_value(tmp_path: Path) -> None:
+def test_set_invoice_due_day_rejects_invalid_value(tmp_path: Path, env) -> None:
     result = runner.invoke(
         app,
         ["config", "set", "credit_cards.invoice_due_day", "99"],
-        env=_env(tmp_path),
+        env=env(),
     )
     output = f"{result.stdout}{result.stderr}"
 
@@ -178,11 +169,12 @@ def test_set_invoice_due_day_rejects_invalid_value(tmp_path: Path) -> None:
 
 def test_set_excluded_categories_writes_nested_credit_cards_table(
     tmp_path: Path,
+    env,
 ) -> None:
     set_result = runner.invoke(
         app,
         ["config", "set", "credit_cards.excluded_categories", "Transfer, Shopping"],
-        env=_env(tmp_path),
+        env=env(),
     )
 
     assert set_result.exit_code == 0
@@ -201,7 +193,7 @@ def test_set_excluded_categories_writes_nested_credit_cards_table(
     get_result = runner.invoke(
         app,
         ["config", "get", "credit_cards.excluded_categories"],
-        env=_env(tmp_path),
+        env=env(),
     )
     assert get_result.exit_code == 0
     assert (
@@ -210,8 +202,8 @@ def test_set_excluded_categories_writes_nested_credit_cards_table(
     )
 
 
-def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+def test_list_shows_default_invoice_due_day(tmp_path: Path, env) -> None:
+    result = runner.invoke(app, ["config", "list"], env=env())
 
     assert result.exit_code == 0
     invoice_lines = [
@@ -232,8 +224,8 @@ def test_list_shows_default_invoice_due_day(tmp_path: Path) -> None:
     assert "default" in pluggy_lines[0]
 
 
-def test_list_shows_default_excluded_categories(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["config", "list"], env=_env(tmp_path))
+def test_list_shows_default_excluded_categories(tmp_path: Path, env) -> None:
+    result = runner.invoke(app, ["config", "list"], env=env())
 
     assert result.exit_code == 0
     excluded_lines = [
