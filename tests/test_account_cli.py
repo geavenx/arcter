@@ -34,8 +34,10 @@ def test_account_update_succeeds_with_item_id_argument(
         observed["item_id"] = item_id
         observed["api_key"] = api_key
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
-    monkeypatch.setattr("arcter.cli.pluggy.update_item", fake_update_item)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
+    monkeypatch.setattr("arcter.commands.account.pluggy.update_item", fake_update_item)
 
     result = runner.invoke(
         app,
@@ -73,8 +75,10 @@ def test_account_update_reads_item_id_from_environment_when_arg_is_missing(
         observed["item_id"] = item_id
         observed["api_key"] = api_key
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
-    monkeypatch.setattr("arcter.cli.pluggy.update_item", fake_update_item)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
+    monkeypatch.setattr("arcter.commands.account.pluggy.update_item", fake_update_item)
 
     result = runner.invoke(
         app,
@@ -105,8 +109,10 @@ def test_account_update_prefers_argument_item_id_over_environment(
     def fake_update_item(item_id: str, _: str) -> None:
         observed["item_id"] = item_id
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
-    monkeypatch.setattr("arcter.cli.pluggy.update_item", fake_update_item)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
+    monkeypatch.setattr("arcter.commands.account.pluggy.update_item", fake_update_item)
 
     result = runner.invoke(
         app,
@@ -128,7 +134,9 @@ def test_account_update_prefers_argument_item_id_over_environment(
 def test_account_update_fails_when_credentials_are_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
+    )
 
     result = runner.invoke(
         app,
@@ -147,7 +155,9 @@ def test_account_update_fails_when_credentials_are_missing(
 def test_account_update_fails_when_item_id_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
+    )
 
     result = runner.invoke(
         app,
@@ -174,7 +184,9 @@ def test_account_update_fails_when_auth_returns_error(
     def fake_authenticate(_: str, __: str) -> str:
         raise PluggyError("Pluggy auth failed with status 401: Unauthorized")
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
 
     result = runner.invoke(
         app,
@@ -202,8 +214,10 @@ def test_account_update_fails_when_update_returns_error(
     def fake_update_item(_: str, __: str) -> None:
         raise PluggyError("Pluggy item update failed with status 400: invalid item")
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
-    monkeypatch.setattr("arcter.cli.pluggy.update_item", fake_update_item)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
+    monkeypatch.setattr("arcter.commands.account.pluggy.update_item", fake_update_item)
 
     result = runner.invoke(
         app,
@@ -228,7 +242,9 @@ def test_account_update_surfaces_timeout_error_message(
     def fake_authenticate(_: str, __: str) -> str:
         raise PluggyError("Pluggy auth request timed out. Please try again.")
 
-    monkeypatch.setattr("arcter.cli.pluggy.authenticate", fake_authenticate)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.authenticate", fake_authenticate
+    )
 
     result = runner.invoke(
         app,
@@ -282,7 +298,7 @@ def test_account_balance_succeeds_with_table_and_currency_totals(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -309,7 +325,7 @@ def test_account_balance_handles_no_eligible_accounts(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -324,7 +340,9 @@ def test_account_balance_handles_no_eligible_accounts(
 def test_account_balance_fails_when_credentials_are_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
+    )
 
     result = runner.invoke(
         app,
@@ -343,7 +361,9 @@ def test_account_balance_fails_when_credentials_are_missing(
 def test_account_balance_fails_when_item_id_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
+    )
 
     result = runner.invoke(
         app,
@@ -371,7 +391,7 @@ def test_account_balance_fails_when_fetch_returns_error(
         raise PluggyError("Pluggy accounts list failed with status 401: Unauthorized")
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -427,9 +447,9 @@ def test_account_goal_reports_progress_when_goal_not_reached(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -467,9 +487,9 @@ def test_account_goal_reports_surplus_when_goal_exceeded(
             )
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -501,9 +521,9 @@ def test_account_goal_reports_exact_goal_as_reached(
             )
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -540,9 +560,9 @@ def test_account_goal_reports_when_no_bank_accounts_in_currency(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -568,9 +588,9 @@ def test_account_goal_reports_when_all_bank_balances_are_none(
             BalanceRow(type="BANK", name="B", balance=None, currency_code="BRL"),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -606,9 +626,9 @@ def test_account_goal_respects_custom_currency_filter(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -641,9 +661,9 @@ def test_account_goal_omits_estimated_line_when_salary_is_zero(
             )
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -665,9 +685,9 @@ def test_account_goal_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> No
     def fake_list_item_balances_with_env(_: str | None) -> list[BalanceRow]:
         raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_balances_with_env",
+        "arcter.commands.account.pluggy.list_item_balances_with_env",
         fake_list_item_balances_with_env,
     )
 
@@ -682,7 +702,7 @@ def test_account_goal_propagates_config_error(tmp_path: Path, monkeypatch) -> No
     def fake_load_config() -> Config:
         raise ConfigError("Config file is not valid TOML")
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
 
     result = runner.invoke(app, ["account", "goal"], env=_env(tmp_path))
     output = f"{result.stdout}{result.stderr}"
@@ -718,7 +738,7 @@ def test_account_credit_shows_detailed_credit_card_output(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
         fake_list_item_credit_cards_with_env,
     )
 
@@ -772,7 +792,7 @@ def test_account_credit_shows_blank_line_between_multiple_cards(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
         fake_list_item_credit_cards_with_env,
     )
 
@@ -789,7 +809,7 @@ def test_account_credit_handles_no_credit_cards(tmp_path: Path, monkeypatch) -> 
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
         fake_list_item_credit_cards_with_env,
     )
 
@@ -821,7 +841,7 @@ def test_account_credit_handles_missing_optional_fields(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
         fake_list_item_credit_cards_with_env,
     )
 
@@ -842,7 +862,7 @@ def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> 
         raise PluggyError("Pluggy accounts list failed with status 500: Internal Error")
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_credit_cards_with_env",
+        "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
         fake_list_item_credit_cards_with_env,
     )
 
@@ -856,7 +876,9 @@ def test_account_credit_propagates_pluggy_error(tmp_path: Path, monkeypatch) -> 
 def test_account_credit_fails_when_credentials_are_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
+    )
 
     result = runner.invoke(
         app,
@@ -875,7 +897,9 @@ def test_account_credit_fails_when_credentials_are_missing(
 def test_account_credit_fails_when_item_id_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy._load_config_item_id", lambda: "")
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy._load_config_item_id", lambda: ""
+    )
 
     result = runner.invoke(
         app,
@@ -965,12 +989,12 @@ def test_account_transactions_happy_path_shows_table(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
 
@@ -1019,7 +1043,7 @@ def test_account_transactions_passes_date_filter_options(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1040,9 +1064,9 @@ def test_account_transactions_passes_date_filter_options(
             "Invoice cycle should not be derived when explicit dates are provided."
         )
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fail_derive_invoice_cycle_date_range,
     )
 
@@ -1104,12 +1128,12 @@ def test_account_transactions_passes_account_type_filter(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
 
@@ -1177,13 +1201,13 @@ def test_account_transactions_filters_by_transaction_type(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1261,13 +1285,13 @@ def test_account_transactions_excludes_categories_from_config(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1330,13 +1354,13 @@ def test_account_transactions_excludes_categories_from_cli_option(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1402,13 +1426,13 @@ def test_account_transactions_combines_config_and_cli_excluded_categories(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.validators.derive_invoice_cycle_date_range",
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1448,7 +1472,7 @@ def test_account_transactions_respects_limit_option(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1475,7 +1499,7 @@ def test_account_transactions_handles_no_transactions(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1521,7 +1545,7 @@ def test_account_transactions_csv_output_contains_header_and_data(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1583,7 +1607,7 @@ def test_account_transactions_csv_output_no_truncation(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1621,7 +1645,7 @@ def test_account_transactions_csv_output_empty_state(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1664,7 +1688,7 @@ def test_account_transactions_csv_output_handles_null_category(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1716,7 +1740,7 @@ def test_account_transactions_json_output_contains_all_fields(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1773,7 +1797,7 @@ def test_account_transactions_json_output_null_category(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1801,7 +1825,7 @@ def test_account_transactions_json_output_empty_state(
         return []
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1853,7 +1877,7 @@ def test_account_transactions_output_csv_respects_filters(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1896,7 +1920,7 @@ def test_account_transactions_output_csv_respects_limit(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1936,7 +1960,7 @@ def test_account_transactions_output_default_is_table(
         ]
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -1992,7 +2016,7 @@ def test_account_transactions_propagates_pluggy_error(
         )
 
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2007,7 +2031,9 @@ def test_account_transactions_fails_when_credentials_are_missing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("arcter.cli.pluggy.credentials.load_credentials", lambda: None)
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.credentials.load_credentials", lambda: None
+    )
 
     result = runner.invoke(
         app,
@@ -2029,7 +2055,7 @@ def test_account_transactions_propagates_config_error(
     def fake_load_config() -> Config:
         raise ConfigError("Config file is not valid TOML")
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
 
     result = runner.invoke(app, ["account", "transactions"], env=_env(tmp_path))
     output = f"{result.stdout}{result.stderr}"
@@ -2109,9 +2135,9 @@ def test_account_spending_happy_path_shows_summary_table(
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2172,10 +2198,10 @@ def test_account_spending_defaults_to_first_day_of_month_and_today(
         observed["date_to"] = date_to
         return []
 
-    monkeypatch.setattr("arcter.cli.validators.datetime.date", FixedDate)
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.validators.datetime.date", FixedDate)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2208,9 +2234,9 @@ def test_account_spending_passes_custom_date_range(tmp_path: Path, monkeypatch) 
         observed["date_to"] = date_to
         return []
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2283,9 +2309,9 @@ def test_account_spending_direction_income(tmp_path: Path, monkeypatch) -> None:
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2385,9 +2411,9 @@ def test_account_spending_top_n(tmp_path: Path, monkeypatch) -> None:
             ),
         ]
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2435,9 +2461,9 @@ def test_account_spending_passes_account_type_filter(
         observed["account_type_filter"] = account_type_filter
         return []
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2477,9 +2503,9 @@ def test_account_spending_handles_no_transactions(tmp_path: Path, monkeypatch) -
     ) -> list[TransactionRow]:
         return []
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2543,9 +2569,9 @@ def test_account_spending_propagates_pluggy_error(tmp_path: Path, monkeypatch) -
             "Pluggy transactions list failed with status 500: Internal Error"
         )
 
-    monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli.pluggy.list_item_transactions_with_env",
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
         fake_list_item_transactions_with_env,
     )
 
@@ -2567,7 +2593,7 @@ def test_account_login_stores_credentials_with_flags(
         observed["client_secret"] = client_secret
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.store_credentials", fake_store_credentials
+        "arcter.commands.account.credentials.store_credentials", fake_store_credentials
     )
 
     result = runner.invoke(
@@ -2596,7 +2622,7 @@ def test_account_login_stores_item_id_in_config(tmp_path: Path, monkeypatch) -> 
         pass
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.store_credentials", fake_store_credentials
+        "arcter.commands.account.credentials.store_credentials", fake_store_credentials
     )
 
     result = runner.invoke(
@@ -2633,7 +2659,7 @@ def test_account_login_prompts_interactively(tmp_path: Path, monkeypatch) -> Non
         observed["client_secret"] = client_secret
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.store_credentials", fake_store_credentials
+        "arcter.commands.account.credentials.store_credentials", fake_store_credentials
     )
 
     result = runner.invoke(
@@ -2677,7 +2703,7 @@ def test_account_login_fails_on_keyring_error(tmp_path: Path, monkeypatch) -> No
         raise CredentialError("Failed to store credentials in system keyring: locked")
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.store_credentials", fake_store_credentials
+        "arcter.commands.account.credentials.store_credentials", fake_store_credentials
     )
 
     result = runner.invoke(
@@ -2705,7 +2731,8 @@ def test_account_logout_clears_credentials(tmp_path: Path, monkeypatch) -> None:
         return True
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.delete_credentials", fake_delete_credentials
+        "arcter.commands.account.credentials.delete_credentials",
+        fake_delete_credentials,
     )
 
     result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
@@ -2723,7 +2750,8 @@ def test_account_logout_reports_when_no_credentials_found(
         return False
 
     monkeypatch.setattr(
-        "arcter.cli.credentials.delete_credentials", fake_delete_credentials
+        "arcter.commands.account.credentials.delete_credentials",
+        fake_delete_credentials,
     )
 
     result = runner.invoke(app, ["account", "logout"], env=_env(tmp_path))
