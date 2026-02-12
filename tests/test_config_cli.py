@@ -16,6 +16,16 @@ def test_root_command_without_args_shows_help() -> None:
     assert "account" in result.stdout
 
 
+def test_config_command_without_args_shows_help() -> None:
+    result = runner.invoke(app, ["config"])
+
+    assert result.exit_code == 0
+    assert "Usage:" in result.stdout
+    assert "set" in result.stdout
+    assert "get" in result.stdout
+    assert "list" in result.stdout
+
+
 def test_set_currency_writes_valid_toml_and_list_is_readable(
     tmp_path: Path, env
 ) -> None:
