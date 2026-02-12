@@ -970,7 +970,7 @@ def test_account_transactions_happy_path_shows_table(
     )
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
 
@@ -1042,7 +1042,7 @@ def test_account_transactions_passes_date_filter_options(
 
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fail_derive_invoice_cycle_date_range,
     )
 
@@ -1109,7 +1109,7 @@ def test_account_transactions_passes_account_type_filter(
     )
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
 
@@ -1179,7 +1179,7 @@ def test_account_transactions_filters_by_transaction_type(
 
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
@@ -1263,7 +1263,7 @@ def test_account_transactions_excludes_categories_from_config(
 
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
@@ -1332,7 +1332,7 @@ def test_account_transactions_excludes_categories_from_cli_option(
 
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
@@ -1404,7 +1404,7 @@ def test_account_transactions_combines_config_and_cli_excluded_categories(
 
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
-        "arcter.cli._derive_invoice_cycle_date_range",
+        "arcter.cli.validators.derive_invoice_cycle_date_range",
         fake_derive_invoice_cycle_date_range,
     )
     monkeypatch.setattr(
@@ -2172,7 +2172,7 @@ def test_account_spending_defaults_to_first_day_of_month_and_today(
         observed["date_to"] = date_to
         return []
 
-    monkeypatch.setattr("arcter.cli.datetime.date", FixedDate)
+    monkeypatch.setattr("arcter.cli.validators.datetime.date", FixedDate)
     monkeypatch.setattr("arcter.cli.load_config", fake_load_config)
     monkeypatch.setattr(
         "arcter.cli.pluggy.list_item_transactions_with_env",
