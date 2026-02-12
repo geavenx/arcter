@@ -7,6 +7,15 @@ from arcter.cli import app
 runner = CliRunner()
 
 
+def test_root_command_without_args_shows_help() -> None:
+    result = runner.invoke(app, [])
+
+    assert result.exit_code == 0
+    assert "Usage:" in result.stdout
+    assert "config" in result.stdout
+    assert "account" in result.stdout
+
+
 def test_set_currency_writes_valid_toml_and_list_is_readable(
     tmp_path: Path, env
 ) -> None:
