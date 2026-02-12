@@ -7,7 +7,17 @@ import typer
 from arcter import credentials, formatters, pluggy, validators
 from arcter.config import ConfigError, load_config, set_user_config
 
-account_app = typer.Typer(help="Manage external account integrations.")
+account_app = typer.Typer(
+    help="Manage external account integrations.",
+    invoke_without_command=True,
+)
+
+
+@account_app.callback()
+def account_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit(code=0)
 
 
 class TransactionOutputFormat(str, Enum):
