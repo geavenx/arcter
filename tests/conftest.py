@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from arcter.config import Config
-from arcter.pluggy import TransactionRow
+from arcter.pluggy import CreditCardRow, TransactionRow
 
 
 @pytest.fixture
@@ -58,3 +58,29 @@ def stub_transactions(monkeypatch):
         return observed
 
     return _stub
+
+
+@pytest.fixture
+def credit_card_row_factory():
+    """Build CreditCardRow objects with overridable defaults for CLI tests."""
+    defaults: dict[str, object] = {
+        "name": "Itau Uniclass 2.0 Mastercard Platinum",
+        "number": "1234",
+        "balance": Decimal("142.41"),
+        "currency_code": "BRL",
+        "credit_limit": Decimal("51800"),
+        "available_credit_limit": Decimal("51300"),
+        "balance_due_date": "2020-07-17",
+        "minimum_payment": Decimal("100"),
+        "brand": "MASTERCARD",
+        "level": "PLATINUM",
+        "status": "ACTIVE",
+        "holder_type": "MAIN",
+    }
+
+    def _build(**overrides: object) -> CreditCardRow:
+        payload = dict(defaults)
+        payload.update(overrides)
+        return CreditCardRow(**payload)
+
+    return _build

@@ -667,7 +667,7 @@ def test_account_goal_propagates_config_error(
 
 
 def test_account_credit_shows_detailed_credit_card_output(
-    tmp_path: Path, env, default_config, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch, credit_card_row_factory
 ) -> None:
     observed: dict[str, str | None] = {}
 
@@ -675,22 +675,7 @@ def test_account_credit_shows_detailed_credit_card_output(
         item_id: str | None,
     ) -> list[CreditCardRow]:
         observed["item_id"] = item_id
-        return [
-            CreditCardRow(
-                name="Itau Uniclass 2.0 Mastercard Platinum",
-                number="1234",
-                balance=Decimal("142.41"),
-                currency_code="BRL",
-                credit_limit=Decimal("51800"),
-                available_credit_limit=Decimal("51300"),
-                balance_due_date="2020-07-17",
-                minimum_payment=Decimal("100"),
-                brand="MASTERCARD",
-                level="PLATINUM",
-                status="ACTIVE",
-                holder_type="MAIN",
-            )
-        ]
+        return [credit_card_row_factory()]
 
     monkeypatch.setattr(
         "arcter.commands.account.pluggy.list_item_credit_cards_with_env",
@@ -775,23 +760,29 @@ def test_account_credit_handles_no_credit_cards(
 
 
 def test_account_credit_handles_missing_optional_fields(
-    tmp_path: Path, env, default_config, monkeypatch
+    tmp_path: Path, env, default_config, monkeypatch, credit_card_row_factory
 ) -> None:
     def fake_list_item_credit_cards_with_env(_: str | None) -> list[CreditCardRow]:
+        missing_optional_fields = {
+            key: None
+            for key in (
+                "credit_limit",
+                "available_credit_limit",
+                "balance_due_date",
+                "minimum_payment",
+                "brand",
+                "level",
+                "status",
+                "holder_type",
+            )
+        }
         return [
-            CreditCardRow(
+            credit_card_row_factory(
                 name="Simple Card",
                 number="",
                 balance=Decimal("55"),
                 currency_code="USD",
-                credit_limit=None,
-                available_credit_limit=None,
-                balance_due_date=None,
-                minimum_payment=None,
-                brand=None,
-                level=None,
-                status=None,
-                holder_type=None,
+                **missing_optional_fields,
             )
         ]
 
