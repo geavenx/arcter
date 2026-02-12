@@ -1,8 +1,5 @@
 import calendar
-import csv
 import datetime
-import json
-import sys
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -22,7 +19,7 @@ from arcter.config import (
     user_config_path,
 )
 from arcter.constants import APP_NAME
-from arcter import credentials, pluggy
+from arcter import credentials, formatters, pluggy
 
 app = typer.Typer(name=APP_NAME)
 config_app = typer.Typer(help="Manage CLI configuration values.")
@@ -46,70 +43,6 @@ class TransactionOutputFormat(str, Enum):
 def _exit_with_error(exc: Exception) -> None:
     typer.secho(str(exc), fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1)
-
-
-def _print_table(values: dict[str, str], sources: dict[str, str]) -> None:
-    rows = [
-        ("currency", values["currency"], sources["currency"]),
-        ("salary", values["salary"], sources["salary"]),
-        ("savings_goal", values["savings_goal"], sources["savings_goal"]),
-        (
-            "pluggy.item_id",
-            values["pluggy.item_id"],
-            sources["pluggy.item_id"],
-        ),
-        (
-            "credit_cards.invoice_due_day",
-            values["credit_cards.invoice_due_day"],
-            sources["credit_cards.invoice_due_day"],
-        ),
-        (
-            "credit_cards.excluded_categories",
-            values["credit_cards.excluded_categories"],
-            sources["credit_cards.excluded_categories"],
-        ),
-    ]
-    headers = ("Key", "Value", "Source")
-    widths = [len(column) for column in headers]
-
-    for row in rows:
-        widths = [
-            max(current, len(value)) for current, value in zip(widths, row, strict=True)
-        ]
-
-    typer.echo(
-        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}"
-    )
-    typer.echo(f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}")
-    for key, value, source in rows:
-        typer.echo(f"{key:<{widths[0]}}  {value:<{widths[1]}}  {source:<{widths[2]}}")
-
-
-def _format_balance_value(value: Decimal | None) -> str:
-    if value is None:
-        return "N/A"
-    return str(value.quantize(Decimal("0.01")))
-
-
-def _format_currency_amount(currency_code: str, value: Decimal) -> str:
-    return f"{currency_code} {value.quantize(Decimal('0.01'))}"
-
-
-def _format_currency_amount_grouped(
-    currency_code: str,
-    value: Decimal,
-    show_sign: bool = False,
-) -> str:
-    quantized = value.quantize(Decimal("0.01"))
-    if show_sign:
-        return f"{currency_code} {quantized:+,.2f}"
-    return f"{currency_code} {quantized:,.2f}"
-
-
-def _truncate_text(value: str, max_length: int = 20) -> str:
-    if len(value) <= max_length:
-        return value
-    return f"{value[: max_length - 3]}..."
 
 
 def _validate_iso_date(value: str | None, option_name: str) -> str | None:
@@ -206,200 +139,6 @@ def _current_month_date_range(
     return current.replace(day=1).isoformat(), current.isoformat()
 
 
-def _format_transaction_amount(amount: Decimal, transaction_type: str) -> str:
-    sign = "+" if transaction_type == "CREDIT" else "-"
-    quantized = abs(amount).quantize(Decimal("0.01"))
-    return f"{sign}{quantized:,.2f}"
-
-
-def _signed_transaction_amount(amount: Decimal, transaction_type: str) -> Decimal:
-    if transaction_type.strip().upper() == "CREDIT":
-        return abs(amount)
-    return -abs(amount)
-
-
-def _format_total_amount(value: Decimal) -> str:
-    sign = "+" if value >= 0 else "-"
-    quantized = abs(value).quantize(Decimal("0.01"))
-    return f"{sign}{quantized:,.2f}"
-
-
-def _print_transaction_table(rows: list[pluggy.TransactionRow]) -> None:
-    table_rows = [
-        (
-            row.date,
-            _truncate_text(row.account_name.strip() or "Unnamed account"),
-            row.type,
-            _format_transaction_amount(row.amount, row.type),
-            row.currency_code,
-            _truncate_text(row.category or ""),
-            row.status,
-        )
-        for row in rows
-    ]
-    headers = ("Date", "Account", "Type", "Amount", "Currency", "Category", "Status")
-    widths = [len(column) for column in headers]
-
-    for row in table_rows:
-        widths = [
-            max(current, len(value)) for current, value in zip(widths, row, strict=True)
-        ]
-
-    typer.echo(
-        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}  {headers[3]:<{widths[3]}}  {headers[4]:<{widths[4]}}  {headers[5]:<{widths[5]}}  {headers[6]:<{widths[6]}}"
-    )
-    typer.echo(
-        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}  {'-' * widths[4]}  {'-' * widths[5]}  {'-' * widths[6]}"
-    )
-    for row in table_rows:
-        typer.echo(
-            f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  {row[3]:<{widths[3]}}  {row[4]:<{widths[4]}}  {row[5]:<{widths[5]}}  {row[6]:<{widths[6]}}"
-        )
-
-
-def _print_transaction_csv(rows: list[pluggy.TransactionRow]) -> None:
-    writer = csv.writer(sys.stdout)
-    writer.writerow(
-        [
-            "Date",
-            "Account",
-            "Account Type",
-            "Type",
-            "Amount",
-            "Currency",
-            "Category",
-            "Status",
-            "Description",
-        ]
-    )
-    for row in rows:
-        writer.writerow(
-            [
-                row.date,
-                row.account_name,
-                row.account_type,
-                row.type,
-                str(row.amount.quantize(Decimal("0.01"))),
-                row.currency_code,
-                row.category or "",
-                row.status,
-                row.description,
-            ]
-        )
-
-
-def _print_transaction_json(rows: list[pluggy.TransactionRow]) -> None:
-    data = [
-        {
-            "date": row.date,
-            "account": row.account_name,
-            "account_type": row.account_type,
-            "type": row.type,
-            "amount": str(row.amount.quantize(Decimal("0.01"))),
-            "currency": row.currency_code,
-            "category": row.category,
-            "status": row.status,
-            "description": row.description,
-        }
-        for row in rows
-    ]
-    typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
-
-
-def _print_spending_table(
-    rows: list[pluggy.CategorySummary],
-    currency_code: str,
-    direction: str,
-    top_n: int | None = None,
-) -> tuple[Decimal, int]:
-    display_rows = rows[:top_n] if top_n is not None else rows
-    show_sign = direction == "all"
-
-    table_rows = [
-        (
-            _truncate_text(row.category),
-            _format_currency_amount_grouped(
-                currency_code,
-                row.total,
-                show_sign=show_sign,
-            ),
-            str(row.count),
-            f"{row.percentage.quantize(Decimal('0.1'))}%",
-        )
-        for row in display_rows
-    ]
-    headers = ("Category", "Amount", "Count", "% of total")
-    widths = [len(column) for column in headers]
-
-    for row in table_rows:
-        widths = [
-            max(current, len(value)) for current, value in zip(widths, row, strict=True)
-        ]
-
-    typer.echo(
-        f"{headers[0]:<{widths[0]}}  {headers[1]:>{widths[1]}}  {headers[2]:>{widths[2]}}  {headers[3]:>{widths[3]}}"
-    )
-    typer.echo(
-        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}"
-    )
-    for row in table_rows:
-        typer.echo(
-            f"{row[0]:<{widths[0]}}  {row[1]:>{widths[1]}}  {row[2]:>{widths[2]}}  {row[3]:>{widths[3]}}"
-        )
-
-    if top_n is not None and len(rows) > top_n:
-        typer.echo(f"... and {len(rows) - top_n} more categories")
-
-    total_amount = sum((row.total for row in rows), Decimal("0"))
-    total_count = sum(row.count for row in rows)
-    return total_amount, total_count
-
-
-def _print_balance_table(rows: list[pluggy.BalanceRow]) -> None:
-    table_rows = [
-        (row.type, row.name, _format_balance_value(row.balance), row.currency_code)
-        for row in rows
-    ]
-    headers = ("Type", "Name", "Balance", "Currency")
-    widths = [len(column) for column in headers]
-
-    for row in table_rows:
-        widths = [
-            max(current, len(value)) for current, value in zip(widths, row, strict=True)
-        ]
-
-    typer.echo(
-        f"{headers[0]:<{widths[0]}}  {headers[1]:<{widths[1]}}  {headers[2]:<{widths[2]}}  {headers[3]:<{widths[3]}}"
-    )
-    typer.echo(
-        f"{'-' * widths[0]}  {'-' * widths[1]}  {'-' * widths[2]}  {'-' * widths[3]}"
-    )
-    for account_type, name, balance, currency in table_rows:
-        typer.echo(
-            f"{account_type:<{widths[0]}}  {name:<{widths[1]}}  {balance:<{widths[2]}}  {currency:<{widths[3]}}"
-        )
-
-
-def _print_balance_totals(rows: list[pluggy.BalanceRow]) -> None:
-    totals_by_currency: dict[str, Decimal] = {}
-    for row in rows:
-        if row.balance is None:
-            continue
-        totals_by_currency[row.currency_code] = (
-            totals_by_currency.get(row.currency_code, Decimal("0")) + row.balance
-        )
-
-    if not totals_by_currency:
-        typer.echo("")
-        typer.echo("Totals by currency: no numeric balances available.")
-        return
-
-    typer.echo("")
-    typer.echo("Totals by currency:")
-    for currency_code, total in sorted(totals_by_currency.items()):
-        typer.echo(f"- {currency_code}: {_format_balance_value(total)}")
-
-
 @config_app.command("set")
 def config_set(key: ConfigKey, value: str) -> None:
     """
@@ -466,7 +205,7 @@ def config_list(
             return
 
         values, sources = list_config_values()
-        _print_table(values, sources)
+        formatters.print_table(values, sources)
     except ConfigError as exc:
         _exit_with_error(exc)
 
@@ -586,8 +325,8 @@ def account_balance(
         typer.echo("No BANK or CREDIT accounts were found for this Pluggy item.")
         return
 
-    _print_balance_table(rows)
-    _print_balance_totals(rows)
+    formatters.print_balance_table(rows)
+    formatters.print_balance_totals(rows)
 
 
 @account_app.command("credit")
@@ -628,7 +367,7 @@ def account_credit(
         typer.echo(f"  Status:     {status_value}")
 
         balance_value = (
-            _format_currency_amount_grouped(row.currency_code, row.balance)
+            formatters.format_currency_amount_grouped(row.currency_code, row.balance)
             if row.balance is not None
             else "N/A"
         )
@@ -637,18 +376,18 @@ def account_credit(
 
         if row.minimum_payment is not None:
             typer.echo(
-                f"  Min. payment: {_format_currency_amount_grouped(row.currency_code, row.minimum_payment)}"
+                f"  Min. payment: {formatters.format_currency_amount_grouped(row.currency_code, row.minimum_payment)}"
             )
 
         if row.credit_limit is not None:
             credit_limit_line = (
                 "  Credit limit: "
-                f"{_format_currency_amount_grouped(row.currency_code, row.credit_limit)}"
+                f"{formatters.format_currency_amount_grouped(row.currency_code, row.credit_limit)}"
             )
             if row.available_credit_limit is not None:
                 credit_limit_line += (
                     "  (available: "
-                    f"{_format_currency_amount_grouped(row.currency_code, row.available_credit_limit)})"
+                    f"{formatters.format_currency_amount_grouped(row.currency_code, row.available_credit_limit)})"
                 )
             typer.echo(credit_limit_line)
 
@@ -707,20 +446,28 @@ def account_goal(
 
     typer.echo(f"Savings goal progress ({target_currency}):")
     typer.echo("")
-    typer.echo(f"  Goal:       {_format_currency_amount(target_currency, goal)}")
     typer.echo(
-        f"  Current:    {_format_currency_amount(target_currency, current_total)}  ({percentage}%)"
+        f"  Goal:       {formatters.format_currency_amount(target_currency, goal)}"
+    )
+    typer.echo(
+        f"  Current:    {formatters.format_currency_amount(target_currency, current_total)}  ({percentage}%)"
     )
 
     if current_total >= goal:
         surplus = current_total - goal
-        typer.echo(f"  Surplus:    {_format_currency_amount(target_currency, surplus)}")
+        typer.echo(
+            f"  Surplus:    {formatters.format_currency_amount(target_currency, surplus)}"
+        )
         typer.echo("  Goal reached!")
         return
 
     remaining = goal - current_total
-    typer.echo(f"  Remaining:  {_format_currency_amount(target_currency, remaining)}")
-    typer.echo(f"  Monthly salary: {_format_currency_amount(target_currency, salary)}")
+    typer.echo(
+        f"  Remaining:  {formatters.format_currency_amount(target_currency, remaining)}"
+    )
+    typer.echo(
+        f"  Monthly salary: {formatters.format_currency_amount(target_currency, salary)}"
+    )
 
     if salary > 0:
         estimated_months = (remaining / salary).quantize(Decimal("0.1"))
@@ -832,10 +579,10 @@ def account_transactions(
 
     if not rows:
         if output_format == TransactionOutputFormat.csv:
-            _print_transaction_csv([])
+            formatters.print_transaction_csv([])
             return
         if output_format == TransactionOutputFormat.json:
-            _print_transaction_json([])
+            formatters.print_transaction_json([])
             return
         if user_passed_date_filter:
             from_label = normalized_from or "start"
@@ -847,22 +594,25 @@ def account_transactions(
 
     displayed_rows = rows[:limit]
     if output_format == TransactionOutputFormat.csv:
-        _print_transaction_csv(displayed_rows)
+        formatters.print_transaction_csv(displayed_rows)
         return
     if output_format == TransactionOutputFormat.json:
-        _print_transaction_json(displayed_rows)
+        formatters.print_transaction_json(displayed_rows)
         return
 
-    _print_transaction_table(displayed_rows)
+    formatters.print_transaction_table(displayed_rows)
     total_value = sum(
-        (_signed_transaction_amount(row.amount, row.type) for row in displayed_rows),
+        (
+            formatters.signed_transaction_amount(row.amount, row.type)
+            for row in displayed_rows
+        ),
         Decimal("0"),
     )
     typer.echo("")
     typer.echo(f"Showing {len(displayed_rows)} of {len(rows)} transactions.")
     if len(displayed_rows) < len(rows):
         typer.echo("Use --limit to show more.")
-    typer.echo(f"TOTAL: {_format_total_amount(total_value)}")
+    typer.echo(f"TOTAL: {formatters.format_total_amount(total_value)}")
 
 
 @account_app.command("spending")
@@ -957,7 +707,7 @@ def account_spending(
         typer.echo("Direction: all (expenses negative, income positive)")
     typer.echo("")
 
-    grand_total, total_count = _print_spending_table(
+    grand_total, total_count = formatters.print_spending_table(
         summaries,
         currency_code=currency_code,
         direction=normalized_direction,
@@ -967,6 +717,6 @@ def account_spending(
     typer.echo("")
     typer.echo(
         "Total: "
-        f"{_format_currency_amount_grouped(currency_code, grand_total, show_sign=normalized_direction == 'all')} "
+        f"{formatters.format_currency_amount_grouped(currency_code, grand_total, show_sign=normalized_direction == 'all')} "
         f"across {total_count} transactions"
     )
