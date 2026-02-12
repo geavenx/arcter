@@ -13,6 +13,17 @@ A personal finance CLI that connects to Brazilian bank accounts via the [Pluggy]
 - Spending breakdown by category with direction/date/top filters (`spending`)
 - Secure Pluggy credential storage via OS keyring (`login` / `logout`)
 
+## Project Layout
+
+- `src/arcter/cli.py`: root Typer app wiring only.
+- `src/arcter/commands/config.py`: `arcter config` subcommands.
+- `src/arcter/commands/account.py`: `arcter account` subcommands.
+- `src/arcter/formatters.py`: shared table/export/amount rendering helpers.
+- `src/arcter/validators.py`: shared input/date/filter normalization helpers.
+- `src/arcter/config.py`: config model, validation, precedence merge, and TOML I/O.
+- `src/arcter/pluggy.py`: Pluggy API client + orchestration.
+- `tests/conftest.py`: shared fixtures for CLI integration tests.
+
 ## Installation
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
@@ -131,6 +142,13 @@ uvx ruff format --check .
 uvx ruff check .
 ```
 
+Optional code-health scans:
+
+```bash
+uv run vulture . --min-confidence 80 --exclude=tests/,venv/,.venv/
+uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 src tests
+```
+
 The CI pipeline runs all three on every push and pull request.
 
-Last reviewed: 2026-02-11
+Last reviewed: 2026-02-12

@@ -7,13 +7,18 @@
 
 ## Project Structure & Module Organization
 - `src/arcter/__init__.py`: empty package marker (no exports or `__version__`).
-- `src/arcter/cli.py`: Typer CLI entrypoint (972 lines), exposed via the `arcter` console script. Defines the root `app`, `config_app` subgroup, and `account_app` subgroup. Contains helper functions for table rendering, date validation, invoice cycle calculation, transaction formatting, transaction export rendering (CSV/JSON), and spending summary rendering.
-- `src/arcter/config.py`: configuration loading (417 lines) with three-layer merge precedence, Pydantic validation, TOML read/write, key normalization, nested config support (`CreditCardsConfig`, `PluggyConfig`), and error handling.
+- `src/arcter/cli.py`: minimal Typer wiring entrypoint (9 lines), exposed via the `arcter` console script. It only builds the root app and attaches command groups from `commands/`.
+- `src/arcter/commands/config.py`: config command group (`set`, `get`, `unset`, `list`, `path`) plus config output format enum and command-local error exit helper.
+- `src/arcter/commands/account.py`: account command group (`login`, `logout`, `update`, `balance`, `credit`, `goal`, `transactions`, `spending`) plus transaction output format enum and command-local error exit helper.
+- `src/arcter/formatters.py`: output/formatting helpers for config tables, balance tables/totals, transaction table/CSV/JSON output, spending table output, and amount/text formatting helpers.
+- `src/arcter/validators.py`: date and option normalization helpers (ISO dates, account/transaction filters, excluded categories, invoice cycle range, current month range).
+- `src/arcter/config.py`: configuration loading (434 lines) with three-layer merge precedence, Pydantic validation, TOML read/write, key normalization, nested config support (`CreditCardsConfig`, `PluggyConfig`), and a registry-based key descriptor system shared by CLI parsing, output formatting, and TOML serialization.
 - `src/arcter/constants.py`: app-level constants (`APP_NAME`, `APP_AUTHOR`) used for CLI naming and `platformdirs` config paths.
 - `src/arcter/credentials.py`: thin `keyring` wrapper for Pluggy API credential storage (store, load, delete).
-- `src/arcter/pluggy.py`: Pluggy API integration (686 lines) — authentication, item updates, balance retrieval, credit card details, account listing, transaction history, and category aggregation helpers. Includes credential/item resolution with environment, keyring, and config fallbacks. All HTTP calls go through a central `_request_json` helper with unified timeout/error handling and pagination support.
+- `src/arcter/pluggy.py`: Pluggy API integration (666 lines) — authentication, item updates, balance retrieval, credit card details, account listing, transaction history, and category aggregation helpers. Includes credential/item resolution with environment, keyring, and config fallbacks. Account parsing and orchestrator setup are deduplicated via shared helpers (`_normalize_account_entry`, `_resolve_and_authenticate`). All HTTP calls go through a central `_request_json` helper with unified timeout/error handling and pagination support.
+- `tests/conftest.py`: shared fixtures (`env`, `default_config`, `stub_transactions`, `credit_card_row_factory`) used by CLI integration tests.
 - `tests/test_config_cli.py`: integration tests for config CLI commands (12 tests using `typer.testing.CliRunner`). Covers set/list round-trip, unknown key rejection, corrupt TOML handling, env-var override source tracking, JSON/TOML output formats, help text, and credit_cards nested config.
-- `tests/test_account_cli.py`: integration tests for account CLI commands (70 tests). Uses `monkeypatch` to stub `arcter.cli.pluggy.*` and `arcter.cli.credentials.*` functions. Covers login/logout, update, balance, goal, credit, transactions (including table/CSV/JSON output modes), and spending commands.
+- `tests/test_account_cli.py`: integration tests for account CLI commands (70 tests). Uses `monkeypatch` to stub `arcter.commands.account.*` imports and shared fixtures from `conftest.py`. Covers login/logout, update, balance, goal, credit, transactions (including table/CSV/JSON output modes), and spending commands.
 - `tests/test_credentials.py`: unit tests for the credentials module (8 tests). Uses `monkeypatch` to stub `keyring` API calls and error handling.
 - `tests/test_pluggy.py`: unit tests for the Pluggy module (29 tests). Uses `monkeypatch` to stub `_request_json`. Covers balance filtering/parsing, credit card parsing, account listing, transaction pagination/parsing, category aggregation, env-based orchestrators, and credential/item-id fallback resolution.
 - `prompts/`: feature specification documents used during development:
@@ -101,10 +106,12 @@ The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goa
 - `uv run arcter --help`: run the CLI entrypoint locally.
 - `uv run arcter config list`: quick sanity check for config loading and command wiring.
 - `uv run arcter account balance`: quick sanity check for Pluggy integration (requires `.env` credentials).
-- `uv run pytest`: run the test suite (119 tests across 4 files).
+- `uv run pytest`: run the test suite (119 tests across 5 files, including shared fixtures in `tests/conftest.py`).
 - `uv build`: build distribution artifacts into `dist/`.
 - `uvx ruff format --check .`: check code formatting.
 - `uvx ruff check .`: run linter.
+- `uv run vulture . --min-confidence 80 --exclude=tests/,venv/,.venv/`: dead-code scan.
+- `uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 src tests`: duplicate-code scan.
 
 ## Pre-commit Hooks
 Configured in `.pre-commit-config.yaml`:
@@ -134,12 +141,13 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) triggers on pushes to `
 - **`test_credentials.py`** (8 tests): keyring store/load/delete behavior, empty/missing value handling, and `CredentialError` wrapping.
 - **`test_pluggy.py`** (29 tests): balance filtering/parsing, invalid payload handling, env/keyring credential resolution, arg/env/config item-id resolution, credit card data parsing (including missing/non-dict creditData), account listing, transaction pagination, transaction field extraction, category aggregation math, unparseable amounts, missing fields, and account-type filtering in orchestrators.
 - Tests use `tmp_path` fixture with `XDG_CONFIG_HOME` override for filesystem isolation.
-- Tests use `monkeypatch` to stub `arcter.cli.pluggy.*` functions (account tests) and `_request_json` (pluggy unit tests).
+- Account tests patch imports from `arcter.commands.account.*` (for example `arcter.commands.account.pluggy.*`, `arcter.commands.account.load_config`, and `arcter.commands.account.validators.*`).
+- Pluggy unit tests patch `_request_json` directly.
 
 ## Dependencies
 **Runtime:** `httpx` (>=0.28.1), `keyring` (>=25.0.0), `platformdirs` (>=4.5.1), `pydantic` (>=2.12.5), `pydantic-extra-types` (>=2.11.0), `tomli-w` (>=1.2.0), `typer` (>=0.23.0), `pycountry` (>=24.6.1, declared but currently unused in source).
 
-**Dev:** `pytest` (>=8.4.0).
+**Dev:** `pytest` (>=8.4.0), `vulture` (>=2.14), `pylint` (>=4.0.4; currently used for duplicate-code scans).
 
 ## Known Issues
 - **`pycountry` unused:** declared as a runtime dependency in `pyproject.toml` but not imported anywhere in the source code. Consider removing or using it.
