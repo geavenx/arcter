@@ -7,18 +7,18 @@
 
 ## Project Structure & Module Organization
 - `src/arcter/__init__.py`: empty package marker (no exports or `__version__`).
-- `src/arcter/cli.py`: minimal Typer wiring entrypoint (9 lines), exposed via the `arcter` console script. It only builds the root app and attaches command groups from `commands/`.
+- `src/arcter/cli.py`: minimal Typer wiring entrypoint (18 lines), exposed via the `arcter` console script. It only builds the root app and attaches command groups from `commands/`.
 - `src/arcter/commands/config.py`: config command group (`set`, `get`, `unset`, `list`, `path`) plus config output format enum and command-local error exit helper.
-- `src/arcter/commands/account.py`: account command group (`login`, `logout`, `update`, `balance`, `credit`, `goal`, `transactions`, `spending`) plus transaction output format enum and command-local error exit helper.
+- `src/arcter/commands/account.py`: account command group (`login`, `logout`, `update`, `balance`, `credit`, `goal`, `salary`, `transactions`, `spending`) plus transaction output format enum and command-local error exit helper. Includes salary sync helpers, interactive transaction picker, and silent salary auto-sync hook in `transactions`.
 - `src/arcter/formatters.py`: output/formatting helpers for config tables, balance tables/totals, transaction table/CSV/JSON output, spending table output, and amount/text formatting helpers.
-- `src/arcter/validators.py`: date and option normalization helpers (ISO dates, account/transaction filters, excluded categories, invoice cycle range, current month range).
-- `src/arcter/config.py`: configuration loading (434 lines) with three-layer merge precedence, Pydantic validation, TOML read/write, key normalization, nested config support (`CreditCardsConfig`, `PluggyConfig`), and a registry-based key descriptor system shared by CLI parsing, output formatting, and TOML serialization.
+- `src/arcter/validators.py`: date and option normalization helpers (ISO dates, account/transaction filters, excluded categories, invoice cycle range, current month range) plus salary filter expression parsing/matching (`>=`, `<=`, `>`, `<`, `=`, plain `N`).
+- `src/arcter/config.py`: configuration loading (519 lines) with three-layer merge precedence, Pydantic validation, TOML read/write, key normalization, nested config support (`AccountConfig`, `SalaryFiltersConfig`, `CreditCardsConfig`, `PluggyConfig`), append behavior for `account.salary_filters.amount`, and a registry-based key descriptor system shared by CLI parsing, output formatting, and TOML serialization.
 - `src/arcter/constants.py`: app-level constants (`APP_NAME`, `APP_AUTHOR`) used for CLI naming and `platformdirs` config paths.
 - `src/arcter/credentials.py`: thin `keyring` wrapper for Pluggy API credential storage (store, load, delete).
 - `src/arcter/pluggy.py`: Pluggy API integration (666 lines) — authentication, item updates, balance retrieval, credit card details, account listing, transaction history, and category aggregation helpers. Includes credential/item resolution with environment, keyring, and config fallbacks. Account parsing and orchestrator setup are deduplicated via shared helpers (`_normalize_account_entry`, `_resolve_and_authenticate`). All HTTP calls go through a central `_request_json` helper with unified timeout/error handling and pagination support.
 - `tests/conftest.py`: shared fixtures (`env`, `default_config`, `stub_transactions`, `credit_card_row_factory`) used by CLI integration tests.
-- `tests/test_config_cli.py`: integration tests for config CLI commands (12 tests using `typer.testing.CliRunner`). Covers set/list round-trip, unknown key rejection, corrupt TOML handling, env-var override source tracking, JSON/TOML output formats, help text, and credit_cards nested config.
-- `tests/test_account_cli.py`: integration tests for account CLI commands (70 tests). Uses `monkeypatch` to stub `arcter.commands.account.*` imports and shared fixtures from `conftest.py`. Covers login/logout, update, balance, goal, credit, transactions (including table/CSV/JSON output modes), and spending commands.
+- `tests/test_config_cli.py`: integration tests for config CLI commands (16 tests using `typer.testing.CliRunner`). Covers set/list round-trip, unknown key rejection, corrupt TOML handling, env-var override source tracking, JSON/TOML output formats, help text, credit_cards nested config, and account salary filter keys (`account.salary_filters.category` and appendable `account.salary_filters.amount`).
+- `tests/test_account_cli.py`: integration tests for account CLI commands (79 tests). Uses `monkeypatch` to stub `arcter.commands.account.*` imports and shared fixtures from `conftest.py`. Covers login/logout, update, balance, goal, credit, salary (`--set`, `--sync`, interactive selection), transactions (including table/CSV/JSON output modes and silent salary auto-sync), and spending commands.
 - `tests/test_credentials.py`: unit tests for the credentials module (8 tests). Uses `monkeypatch` to stub `keyring` API calls and error handling.
 - `tests/test_pluggy.py`: unit tests for the Pluggy module (29 tests). Uses `monkeypatch` to stub `_request_json`. Covers balance filtering/parsing, credit card parsing, account listing, transaction pagination/parsing, category aggregation, env-based orchestrators, and credential/item-id fallback resolution.
 - `prompts/`: feature specification documents used during development:
@@ -27,6 +27,10 @@
   - `03-transaction-history.md`: spec for `arcter account transactions` (implemented).
   - `04-spending-summary.md`: spec for `arcter account spending` (implemented).
   - `05-credential-storage.md`: spec for `arcter account login/logout` (implemented).
+  - `06-transaction-export.md`: spec for transaction export/output behavior.
+  - `07-transaction-search.md`: notes/spec for transaction search filtering.
+  - `08-account-list.md`: notes/spec for account listing discussions.
+  - `09-cli-refactor.md`: notes/spec for CLI refactor ideas.
 - `example_pluggy_integration.py`: standalone prototype script that predates the integrated `pluggy.py` module; uses `requests` + `python-dotenv`. Kept for reference only.
 - `dist/`: generated build artifacts (wheel/sdist); treat as output, not source. Currently outdated (v0.1.0, predates most features).
 - `build/`: stale build artifacts from a previous `python -m build` invocation. Out of date (predates `savings_goal`, Pluggy, credit cards, and transactions features). Safe to delete.
@@ -46,7 +50,7 @@ The CLI is structured as `arcter <subgroup> <subcommand>`:
 | `arcter config list` | `--format`/`-f` (`table`\|`json`\|`toml`, default: `table`) | List all config values with sources |
 | `arcter config path` | (none) | Print the config file path |
 
-The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goal`, `credit_cards.invoice_due_day`, `credit_cards.excluded_categories`, `pluggy.item_id`), so Typer validates keys at parse time (exit code 2 for invalid keys).
+The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goal`, `account.salary_filters.category`, `account.salary_filters.amount`, `credit_cards.invoice_due_day`, `credit_cards.excluded_categories`, `pluggy.item_id`), so Typer validates keys at parse time (exit code 2 for invalid keys).
 
 ### `arcter account` subgroup
 
@@ -58,6 +62,7 @@ The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goa
 | `arcter account logout` | (none) | Remove Pluggy API credentials from system keyring |
 | `arcter account credit [ITEM_ID]` | `item_id`: optional string (falls back to `PLUGGY_ITEM_ID` env var) | Show detailed credit card information (limits, due dates, minimum payments) |
 | `arcter account goal [ITEM_ID]` | `item_id`: optional, `--currency`/`-c`: optional (defaults to config `currency`) | Show savings goal progress against BANK balances, with estimated months to reach the goal |
+| `arcter account salary [ITEM_ID]` | `item_id`: optional, `--sync`: sync from transactions using configured filters, `--set`: manual salary value | Manage salary via manual set or transaction-based sync with interactive picker fallback |
 | `arcter account transactions [ITEM_ID]` | `item_id`: optional, `--from`/`-f` and `--to`/`-t`: YYYY-MM-DD dates, `--type`: CREDIT\|DEBIT, `--account-type`: BANK\|CREDIT, `--excludes`: category names (repeatable), `--limit`/`-n`: max rows, `--output`/`-o`: table\|csv\|json | Show transaction history across accounts with filtering and optional machine-readable export |
 | `arcter account spending [ITEM_ID]` | `item_id`: optional, `--from`/`-f` and `--to`/`-t`: YYYY-MM-DD dates, `--direction`/`-d`: expense\|income\|all, `--type`: BANK\|CREDIT, `--top`: top N categories | Show category spending/income summary for the selected period |
 
@@ -68,6 +73,10 @@ The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goa
   - `salary`: `Decimal` (default `200.00`, 2 decimal places)
   - `currency`: `ISO4217` (default `BRL`, auto-uppercased, validated against ISO 4217)
   - `savings_goal`: `Decimal` (default `500.00`, 2 decimal places)
+  - `account`: nested `AccountConfig` model:
+    - `salary_filters`: nested `SalaryFiltersConfig` model:
+      - `category`: `str` (default `""`, case-insensitive exact match when syncing salary)
+      - `amount`: `list[str]` (default `[]`, appendable amount expressions such as `>=4300`, `<=4380`, `4322`)
   - `credit_cards`: nested `CreditCardsConfig` model:
     - `invoice_due_day`: `int` (default `30`, must be 1-31)
     - `excluded_categories`: `list[str]` (default `[]`, normalized via `casefold` for case-insensitive comparison)
@@ -106,7 +115,8 @@ The `key` argument uses the `ConfigKey` enum (`salary`, `currency`, `savings_goa
 - `uv run arcter --help`: run the CLI entrypoint locally.
 - `uv run arcter config list`: quick sanity check for config loading and command wiring.
 - `uv run arcter account balance`: quick sanity check for Pluggy integration (requires `.env` credentials).
-- `uv run pytest`: run the test suite (119 tests across 5 files, including shared fixtures in `tests/conftest.py`).
+- `uv run arcter account salary --help`: quick sanity check for salary command wiring.
+- `uv run pytest`: run the test suite (132 tests across 4 test modules, with shared fixtures in `tests/conftest.py`).
 - `uv build`: build distribution artifacts into `dist/`.
 - `uvx ruff format --check .`: check code formatting.
 - `uvx ruff check .`: run linter.
@@ -119,7 +129,7 @@ Configured in `.pre-commit-config.yaml`:
 - `ruff-check --fix` + `ruff-format` (astral-sh/ruff-pre-commit v0.15.0) — auto-fixes lint issues and formats code on commit.
 
 ## CI/CD
-The GitHub Actions workflow (`.github/workflows/ci.yml`) triggers on pushes to `master` and all pull requests:
+The GitHub Actions workflow (`.github/workflows/ci.yml`) triggers on pushes to `master` and `develop`, plus all pull requests:
 1. Checkout + install uv (with caching) + set up Python from `.python-version`
 2. `uv sync --all-groups --frozen` — install all deps including dev
 3. `uv run pytest` — run tests
@@ -136,8 +146,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) triggers on pushes to `
 ## Testing Guidelines
 - Framework: `pytest` (already in dev dependencies).
 - Tests live under `tests/` with names like `test_<behavior>.py`.
-- **`test_config_cli.py`** (12 tests): config set/list round-trip, unknown key rejection, corrupt TOML handling, env-var override source tracking, JSON/TOML output formats, help text, and credit_cards nested config (invoice_due_day, excluded_categories).
-- **`test_account_cli.py`** (70 tests): account login/logout, update, balance, goal, credit, transactions, and spending commands — happy paths, env-var/keyring/config fallback behavior, credential/item-id validation errors, HTTP error propagation, timeout handling, date filtering/defaults, transaction type/account type filtering, category exclusion (config + CLI), transactions output format coverage (`table`, `csv`, `json`), top-N limits, and edge cases (no accounts, nil balances, zero salary).
+- **`test_config_cli.py`** (16 tests): config set/list round-trip, unknown key rejection, corrupt TOML handling, env-var override source tracking, JSON/TOML output formats, help text, credit_cards nested config, and account salary filter key behavior (including append + validation for `account.salary_filters.amount`).
+- **`test_account_cli.py`** (79 tests): account login/logout, update, balance, goal, credit, salary, transactions, and spending commands — happy paths, env-var/keyring/config fallback behavior, credential/item-id validation errors, HTTP error propagation, timeout handling, date filtering/defaults, transaction type/account type filtering, category exclusion (config + CLI), transactions output format coverage (`table`, `csv`, `json`), salary sync interactive flow (`--sync`) and silent transactions sync, top-N limits, and edge cases (no accounts, nil balances, zero salary).
 - **`test_credentials.py`** (8 tests): keyring store/load/delete behavior, empty/missing value handling, and `CredentialError` wrapping.
 - **`test_pluggy.py`** (29 tests): balance filtering/parsing, invalid payload handling, env/keyring credential resolution, arg/env/config item-id resolution, credit card data parsing (including missing/non-dict creditData), account listing, transaction pagination, transaction field extraction, category aggregation math, unparseable amounts, missing fields, and account-type filtering in orchestrators.
 - Tests use `tmp_path` fixture with `XDG_CONFIG_HOME` override for filesystem isolation.
@@ -153,7 +163,6 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) triggers on pushes to `
 - **`pycountry` unused:** declared as a runtime dependency in `pyproject.toml` but not imported anywhere in the source code. Consider removing or using it.
 - **Stale `build/` directory:** contains outdated code from before the `savings_goal`, Pluggy, credit cards, and transactions features. Safe to delete.
 - **Stale `dist/` artifacts:** the wheel and sdist in `dist/` are v0.1.0 and predate most features. They will be regenerated on `uv build`.
-- **Placeholder project description:** `pyproject.toml` still has `description = "Add your description here"`.
 - **No `[build-system]` table:** `pyproject.toml` relies on uv defaults (`[tool.uv] package = true`) without an explicit `[build-system]` declaration.
 
 ## Commit & Pull Request Guidelines
