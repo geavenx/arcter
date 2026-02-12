@@ -119,6 +119,7 @@ arcter account spending --type credit --top 5
 - `arcter account salary --sync` fetches current-month transactions and applies configured filters:
   - `account.salary_filters.category`: case-insensitive exact category match.
   - `account.salary_filters.amount`: appendable amount expressions (`>=`, `<=`, `>`, `<`, `=`, or plain value like `4322`).
+- If no current-month match is found, sync automatically retries the previous month using the same filters.
 - If sync finds:
   - exactly 1 transaction: salary is updated automatically.
   - more than 1 transaction: an interactive chooser is shown.

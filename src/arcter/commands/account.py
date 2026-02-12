@@ -169,25 +169,48 @@ def _sync_salary_silently_if_single_match(
 
 def _sync_salary_with_filters(item_id: str | None, config: Config) -> None:
     current_month_from, current_month_to = validators.current_month_date_range()
-    rows = pluggy.list_item_transactions_with_env(
+    current_rows = pluggy.list_item_transactions_with_env(
         item_id,
         date_from=current_month_from,
         date_to=current_month_to,
     )
 
-    if not rows:
-        typer.echo("No transactions found in the current month.")
+    current_candidates = _filter_salary_transactions(current_rows, config)
+    if len(current_candidates) == 1:
+        _set_salary_from_transaction(current_candidates[0], announce=True)
         return
 
-    candidates = _filter_salary_transactions(rows, config)
-    if len(candidates) == 1:
-        _set_salary_from_transaction(candidates[0], announce=True)
-        return
-
-    if len(candidates) > 1:
+    if len(current_candidates) > 1:
         selected = _prompt_salary_transaction_choice(
-            candidates,
+            current_candidates,
             "Multiple transactions matched salary filters. Choose one:",
+        )
+        if selected is None:
+            typer.echo("Salary sync cancelled.")
+            return
+
+        _set_salary_from_transaction(selected, announce=True)
+        return
+
+    previous_month_from, previous_month_to = validators.previous_month_date_range()
+    previous_rows = pluggy.list_item_transactions_with_env(
+        item_id,
+        date_from=previous_month_from,
+        date_to=previous_month_to,
+    )
+    previous_candidates = _filter_salary_transactions(previous_rows, config)
+    if len(previous_candidates) == 1:
+        typer.echo(
+            f"No salary match found for {current_month_from} to {current_month_to}. "
+            f"Using last month match ({previous_month_from} to {previous_month_to})."
+        )
+        _set_salary_from_transaction(previous_candidates[0], announce=True)
+        return
+
+    if len(previous_candidates) > 1:
+        selected = _prompt_salary_transaction_choice(
+            previous_candidates,
+            "No current-month salary match. Multiple last-month matches found. Choose one:",
         )
         if selected is None:
             typer.echo("Salary sync cancelled.")
@@ -198,8 +221,25 @@ def _sync_salary_with_filters(item_id: str | None, config: Config) -> None:
 
     _print_salary_filter_debug_tips(config)
     typer.echo("")
+
+    if not current_rows:
+        if previous_rows:
+            fallback_selection = _prompt_salary_transaction_choice(
+                previous_rows,
+                "No transactions found in the current month. Select one from last month to set salary:",
+            )
+            if fallback_selection is None:
+                typer.echo("Salary sync cancelled.")
+                return
+
+            _set_salary_from_transaction(fallback_selection, announce=True)
+            return
+
+        typer.echo("No transactions found in the current month or last month.")
+        return
+
     fallback_selection = _prompt_salary_transaction_choice(
-        rows,
+        current_rows,
         "Select a transaction from the current month to set salary:",
     )
     if fallback_selection is None:
