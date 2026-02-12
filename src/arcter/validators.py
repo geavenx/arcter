@@ -99,6 +99,23 @@ def current_month_date_range(
     return current.replace(day=1).isoformat(), current.isoformat()
 
 
+def previous_month_date_range(
+    today: datetime.date | None = None,
+) -> tuple[str, str]:
+    current = today or datetime.date.today()
+    if current.month == 1:
+        previous_year = current.year - 1
+        previous_month = 12
+    else:
+        previous_year = current.year
+        previous_month = current.month - 1
+
+    last_day = calendar.monthrange(previous_year, previous_month)[1]
+    start_date = date(previous_year, previous_month, 1)
+    end_date = date(previous_year, previous_month, last_day)
+    return start_date.isoformat(), end_date.isoformat()
+
+
 _SALARY_AMOUNT_FILTER_PATTERN = re.compile(
     r"^(?:(>=|<=|>|<|=)\s*)?([+-]?\d+(?:\.\d+)?)$"
 )
