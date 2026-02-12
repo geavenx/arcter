@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from difflib import get_close_matches
 from enum import Enum
@@ -5,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import tomllib
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from platformdirs import user_config_dir
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -51,6 +52,75 @@ class UnknownConfigKeyError(ConfigError):
 
 class ConfigValidationError(ConfigError):
     """Raised when a config value fails schema validation."""
+
+
+@dataclass(frozen=True, slots=True)
+class _KeyDescriptor:
+    serialize: Callable[[Any], Any]
+    parse_cli: Callable[[str], Any]
+    format_output: Callable[[Any], str]
+
+
+def _parse_int(raw: str, key_name: str) -> int:
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigValidationError(
+            f"Invalid value for '{key_name}'. Use an integer between 1 and 31."
+        ) from exc
+
+
+def _make_decimal_parser(key_name: str) -> Callable[[str], Decimal]:
+    def parse(raw: str) -> Decimal:
+        try:
+            return Decimal(raw)
+        except InvalidOperation as exc:
+            raise ConfigValidationError(
+                f"Invalid value for '{key_name}'. Use a numeric value, for example: 2500.00"
+            ) from exc
+
+    return parse
+
+
+def _format_decimal(value: Any) -> str:
+    decimal_value = Decimal(value).quantize(Decimal("0.01"))
+    return str(decimal_value)
+
+
+_KEY_REGISTRY: dict[str, _KeyDescriptor] = {
+    "currency": _KeyDescriptor(
+        serialize=str,
+        parse_cli=lambda raw: raw.strip().upper(),
+        format_output=str,
+    ),
+    "salary": _KeyDescriptor(
+        serialize=lambda value: float(Decimal(value)),
+        parse_cli=_make_decimal_parser("salary"),
+        format_output=_format_decimal,
+    ),
+    "savings_goal": _KeyDescriptor(
+        serialize=lambda value: float(Decimal(value)),
+        parse_cli=_make_decimal_parser("savings_goal"),
+        format_output=_format_decimal,
+    ),
+    "credit_cards.invoice_due_day": _KeyDescriptor(
+        serialize=int,
+        parse_cli=lambda raw: _parse_int(raw, "credit_cards.invoice_due_day"),
+        format_output=lambda value: str(int(value)),
+    ),
+    "credit_cards.excluded_categories": _KeyDescriptor(
+        serialize=lambda value: [str(entry) for entry in list(value)],
+        parse_cli=lambda raw: [
+            entry.strip() for entry in raw.split(",") if entry.strip()
+        ],
+        format_output=lambda value: json.dumps(list(value)),
+    ),
+    "pluggy.item_id": _KeyDescriptor(
+        serialize=str,
+        parse_cli=lambda raw: raw.strip(),
+        format_output=lambda value: str(value) if value else "",
+    ),
+}
 
 
 class CreditCardsConfig(BaseModel):
@@ -236,22 +306,10 @@ def load_env_config() -> dict[str, Any]:
 
 
 def _serialize_for_toml(key: str, value: Any) -> Any:
-    if key == "currency":
-        return str(value)
-
-    if key in ("salary", "savings_goal"):
-        return float(Decimal(value))
-
-    if key == "credit_cards.invoice_due_day":
-        return int(value)
-
-    if key == "credit_cards.excluded_categories":
-        return [str(entry) for entry in list(value)]
-
-    if key == "pluggy.item_id":
-        return str(value)
-
-    return value
+    descriptor = _KEY_REGISTRY.get(key)
+    if descriptor is None:
+        return value
+    return descriptor.serialize(value)
 
 
 def _write_toml(path: Path, data: Mapping[str, Any]) -> None:
@@ -274,33 +332,10 @@ def _validate_payload(payload: Mapping[str, Any]) -> Config:
 
 
 def _normalize_cli_value(key: str, raw_value: str) -> Any:
-    if key == "currency":
-        return raw_value.strip().upper()
-
-    if key in ("salary", "savings_goal"):
-        try:
-            return Decimal(raw_value)
-        except InvalidOperation as exc:
-            raise ConfigValidationError(
-                f"Invalid value for '{key}'. Use a numeric value, for example: 2500.00"
-            ) from exc
-
-    if key == "credit_cards.invoice_due_day":
-        try:
-            return int(raw_value)
-        except ValueError as exc:
-            raise ConfigValidationError(
-                "Invalid value for 'credit_cards.invoice_due_day'. "
-                "Use an integer between 1 and 31."
-            ) from exc
-
-    if key == "credit_cards.excluded_categories":
-        return [entry.strip() for entry in raw_value.split(",") if entry.strip()]
-
-    if key == "pluggy.item_id":
-        return raw_value.strip()
-
-    return raw_value
+    descriptor = _KEY_REGISTRY.get(key)
+    if descriptor is None:
+        return raw_value
+    return descriptor.parse_cli(raw_value)
 
 
 def load_config(cli_overrides: Mapping[str, Any] | None = None) -> Config:
@@ -330,20 +365,10 @@ def resolve_config_with_sources(
 
 
 def _value_for_output(key: str, value: Any) -> str:
-    if key in ("salary", "savings_goal"):
-        decimal_value = Decimal(value).quantize(Decimal("0.01"))
-        return str(decimal_value)
-
-    if key == "credit_cards.invoice_due_day":
-        return str(int(value))
-
-    if key == "credit_cards.excluded_categories":
-        return json.dumps(list(value))
-
-    if key == "pluggy.item_id":
-        return str(value) if value else ""
-
-    return str(value)
+    descriptor = _KEY_REGISTRY.get(key)
+    if descriptor is None:
+        return str(value)
+    return descriptor.format_output(value)
 
 
 def set_user_config(key: str, raw_value: str) -> tuple[str, str]:
@@ -402,16 +427,8 @@ def list_config_as_json() -> str:
 
 def list_config_as_toml() -> str:
     config = load_config()
-    toml_payload = {
-        "currency": str(config.currency),
-        "salary": float(Decimal(config.salary)),
-        "savings_goal": float(Decimal(config.savings_goal)),
-        "credit_cards": {
-            "invoice_due_day": int(config.credit_cards.invoice_due_day),
-            "excluded_categories": list(config.credit_cards.excluded_categories),
-        },
-        "pluggy": {
-            "item_id": str(config.pluggy.item_id),
-        },
+    flat_payload = {
+        key: _serialize_for_toml(key, _resolve_config_value(config, key))
+        for key in VALID_KEYS
     }
-    return tomli_w.dumps(toml_payload)
+    return tomli_w.dumps(_flat_to_nested_map(flat_payload))
