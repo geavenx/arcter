@@ -9,6 +9,7 @@ A personal finance CLI that connects to Brazilian bank accounts via the [Pluggy]
 - Configuration with layered precedence (defaults -> file -> env -> CLI)
 - Pluggy account sync (`update`) and unified balance view (`balance`)
 - Credit card details (`credit`) and savings goal tracking (`goal`)
+- Salary management via direct set or transaction sync (`salary`)
 - Transaction listing with date/account/type/category filters and export formats (`transactions`)
 - Spending breakdown by category with direction/date/top filters (`spending`)
 - Secure Pluggy credential storage via OS keyring (`login` / `logout`)
@@ -45,6 +46,12 @@ arcter config set salary 5000
 arcter config set currency BRL
 arcter config set savings_goal 25000
 arcter config set pluggy.item_id your-item-id
+
+# Salary sync filters
+arcter config set account.salary_filters.category "Transfer"
+arcter config set account.salary_filters.amount ">=4300"
+arcter config set account.salary_filters.amount "<=4380"
+
 arcter config list
 ```
 
@@ -87,6 +94,10 @@ arcter account credit
 # Track savings goal progress
 arcter account goal
 
+# Manage salary
+arcter account salary --set 4322.75
+arcter account salary --sync
+
 # List recent transactions with filtering
 arcter account transactions --from 2025-01-01 --to 2025-01-31
 arcter account transactions --type debit --account-type bank
@@ -102,6 +113,20 @@ arcter account spending --direction income
 arcter account spending --type credit --top 5
 ```
 
+### Salary sync behavior
+
+- `arcter account salary --set <amount>` writes `salary` directly to config.
+- `arcter account salary --sync` fetches current-month transactions and applies configured filters:
+  - `account.salary_filters.category`: case-insensitive exact category match.
+  - `account.salary_filters.amount`: appendable amount expressions (`>=`, `<=`, `>`, `<`, `=`, or plain value like `4322`).
+- If sync finds:
+  - exactly 1 transaction: salary is updated automatically.
+  - more than 1 transaction: an interactive chooser is shown.
+  - no transactions: debug tips are shown, then current-month transactions are offered for manual selection.
+- `arcter account transactions` performs a best-effort silent salary sync on each run:
+  - only when filters are configured and exactly one matching transaction is found;
+  - otherwise it does nothing and keeps transaction output unchanged.
+
 ## How It Works
 
 Arcter has two core subsystems:
@@ -115,11 +140,13 @@ Default values:
 | `currency` | `BRL` | `ARCTER_CURRENCY` |
 | `salary` | `200.00` | `ARCTER_SALARY` |
 | `savings_goal` | `500.00` | `ARCTER_SAVINGS_GOAL` |
+| `account.salary_filters.category` | `""` | — |
+| `account.salary_filters.amount` | `[]` | — |
 | `credit_cards.invoice_due_day` | `30` | `ARCTER_INVOICE_DUE_DAY` |
 | `credit_cards.excluded_categories` | `[]` | — |
 | `pluggy.item_id` | `""` | `PLUGGY_ITEM_ID` |
 
-**Pluggy integration** authenticates with the Pluggy API, then fetches account data (balances, credit card details, transactions) through a central HTTP client with unified error handling. Transaction listing supports server-side pagination, client-side filtering by date range/transaction type/account type/category exclusions, and output rendering as `table`, `csv`, or `json` for scripting and spreadsheet workflows. Spending summaries reuse the same transaction layer and aggregate totals by Pluggy category (`expense`, `income`, or `all`) with optional top-N output. When no date range is given, spending defaults to first day of the current month through today, while transaction listing derives dates from the configured invoice cycle.
+**Pluggy integration** authenticates with the Pluggy API, then fetches account data (balances, credit card details, transactions) through a central HTTP client with unified error handling. Transaction listing supports server-side pagination, client-side filtering by date range/transaction type/account type/category exclusions, output rendering as `table`, `csv`, or `json`, and an optional silent salary auto-sync path (exact single match only). Spending summaries reuse the same transaction layer and aggregate totals by Pluggy category (`expense`, `income`, or `all`) with optional top-N output. When no date range is given, spending defaults to first day of the current month through today, while transaction listing derives dates from the configured invoice cycle.
 
 ## Contributing
 
