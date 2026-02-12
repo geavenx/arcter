@@ -1,6 +1,8 @@
 import calendar
 import datetime
 from datetime import date
+from decimal import Decimal, InvalidOperation
+import re
 
 
 def validate_iso_date(value: str | None, option_name: str) -> str | None:
@@ -95,3 +97,72 @@ def current_month_date_range(
 ) -> tuple[str, str]:
     current = today or datetime.date.today()
     return current.replace(day=1).isoformat(), current.isoformat()
+
+
+_SALARY_AMOUNT_FILTER_PATTERN = re.compile(
+    r"^(?:(>=|<=|>|<|=)\s*)?([+-]?\d+(?:\.\d+)?)$"
+)
+
+
+def parse_salary_amount_filter_expression(expression: str) -> tuple[str, Decimal, bool]:
+    normalized = expression.strip()
+    if not normalized:
+        raise ValueError("Salary amount filter expression cannot be empty.")
+
+    match = _SALARY_AMOUNT_FILTER_PATTERN.match(normalized)
+    if match is None:
+        raise ValueError(
+            "Invalid salary amount filter expression. "
+            "Use one of: >=4300, <=4380, =4322.50, or 4322."
+        )
+
+    operator = match.group(1) or ""
+    raw_amount = match.group(2)
+    try:
+        amount = Decimal(raw_amount)
+    except InvalidOperation as exc:
+        raise ValueError(
+            "Invalid salary amount filter expression. "
+            "Use one of: >=4300, <=4380, =4322.50, or 4322."
+        ) from exc
+
+    return operator, amount, operator == ""
+
+
+def _format_decimal_compact(value: Decimal) -> str:
+    text = format(value.normalize(), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    if text in {"", "-0"}:
+        return "0"
+    return text
+
+
+def normalize_salary_amount_filter_expression(expression: str) -> str:
+    operator, amount, is_plain = parse_salary_amount_filter_expression(expression)
+    compact_amount = _format_decimal_compact(amount)
+    if is_plain:
+        return compact_amount
+    return f"{operator}{compact_amount}"
+
+
+def matches_salary_amount_filter(amount: Decimal, expression: str) -> bool:
+    operator, target, is_plain = parse_salary_amount_filter_expression(expression)
+    normalized_amount = abs(amount)
+    normalized_target = abs(target)
+
+    if operator == ">=":
+        return normalized_amount >= normalized_target
+    if operator == "<=":
+        return normalized_amount <= normalized_target
+    if operator == ">":
+        return normalized_amount > normalized_target
+    if operator == "<":
+        return normalized_amount < normalized_target
+    if operator == "=":
+        return normalized_amount == normalized_target
+
+    if is_plain and normalized_target == normalized_target.to_integral_value():
+        return normalized_target <= normalized_amount < normalized_target + Decimal("1")
+
+    return normalized_amount == normalized_target

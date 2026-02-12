@@ -14,6 +14,16 @@ def print_table(values: dict[str, str], sources: dict[str, str]) -> None:
         ("salary", values["salary"], sources["salary"]),
         ("savings_goal", values["savings_goal"], sources["savings_goal"]),
         (
+            "account.salary_filters.category",
+            values["account.salary_filters.category"],
+            sources["account.salary_filters.category"],
+        ),
+        (
+            "account.salary_filters.amount",
+            values["account.salary_filters.amount"],
+            sources["account.salary_filters.amount"],
+        ),
+        (
             "pluggy.item_id",
             values["pluggy.item_id"],
             sources["pluggy.item_id"],

@@ -14,12 +14,15 @@ from pydantic_extra_types.currency_code import ISO4217
 import tomli_w
 
 from arcter.constants import APP_AUTHOR, APP_NAME
+from arcter import validators
 
 
 class ConfigKey(str, Enum):
     currency = "currency"
     salary = "salary"
     savings_goal = "savings_goal"
+    account_salary_filters_category = "account.salary_filters.category"
+    account_salary_filters_amount = "account.salary_filters.amount"
     credit_cards_invoice_due_day = "credit_cards.invoice_due_day"
     credit_cards_excluded_categories = "credit_cards.excluded_categories"
     pluggy_item_id = "pluggy.item_id"
@@ -82,6 +85,13 @@ def _make_decimal_parser(key_name: str) -> Callable[[str], Decimal]:
     return parse
 
 
+def _parse_salary_amount_filter(raw: str) -> str:
+    try:
+        return validators.normalize_salary_amount_filter_expression(raw)
+    except ValueError as exc:
+        raise ConfigValidationError(str(exc)) from exc
+
+
 def _format_decimal(value: Any) -> str:
     decimal_value = Decimal(value).quantize(Decimal("0.01"))
     return str(decimal_value)
@@ -102,6 +112,16 @@ _KEY_REGISTRY: dict[str, _KeyDescriptor] = {
         serialize=lambda value: float(Decimal(value)),
         parse_cli=_make_decimal_parser("savings_goal"),
         format_output=_format_decimal,
+    ),
+    "account.salary_filters.category": _KeyDescriptor(
+        serialize=str,
+        parse_cli=lambda raw: raw.strip(),
+        format_output=lambda value: str(value) if value else "",
+    ),
+    "account.salary_filters.amount": _KeyDescriptor(
+        serialize=lambda value: [str(entry) for entry in list(value)],
+        parse_cli=_parse_salary_amount_filter,
+        format_output=lambda value: json.dumps(list(value)),
     ),
     "credit_cards.invoice_due_day": _KeyDescriptor(
         serialize=int,
@@ -161,6 +181,60 @@ class CreditCardsConfig(BaseModel):
         return normalized
 
 
+class SalaryFiltersConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(default="")
+    amount: list[str] = Field(default_factory=list)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category(cls, value: Any) -> Any:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def normalize_amount_filters(cls, value: Any) -> Any:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            candidates: list[Any] = [value]
+        elif isinstance(value, tuple):
+            candidates = list(value)
+        elif isinstance(value, list):
+            candidates = value
+        else:
+            return value
+
+        normalized: list[str] = []
+        for candidate in candidates:
+            text = str(candidate).strip()
+            if text:
+                normalized.append(text)
+        return normalized
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount_filters(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for candidate in value:
+            normalized.append(
+                validators.normalize_salary_amount_filter_expression(candidate)
+            )
+        return normalized
+
+
+class AccountConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    salary_filters: SalaryFiltersConfig = Field(default_factory=SalaryFiltersConfig)
+
+
 class PluggyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +247,7 @@ class Config(BaseModel):
     currency: ISO4217 = Field(default=ISO4217("BRL"))
     salary: Decimal = Field(default=Decimal("200.00"), decimal_places=2)
     savings_goal: Decimal = Field(default=Decimal("500.00"), decimal_places=2)
+    account: AccountConfig = Field(default_factory=AccountConfig)
     credit_cards: CreditCardsConfig = Field(default_factory=CreditCardsConfig)
     pluggy: PluggyConfig = Field(default_factory=PluggyConfig)
 
@@ -377,7 +452,17 @@ def set_user_config(key: str, raw_value: str) -> tuple[str, str]:
 
     data = load_user_config()
     candidate = dict(data)
-    candidate[normalized_key] = normalized_value
+    if normalized_key == "account.salary_filters.amount":
+        existing = candidate.get(normalized_key, [])
+        if isinstance(existing, list):
+            existing_filters = [str(entry) for entry in existing]
+        elif isinstance(existing, str):
+            existing_filters = [existing]
+        else:
+            existing_filters = []
+        candidate[normalized_key] = [*existing_filters, normalized_value]
+    else:
+        candidate[normalized_key] = normalized_value
     validated = _validate_payload(candidate)
     validated_value = _resolve_config_value(validated, normalized_key)
 
