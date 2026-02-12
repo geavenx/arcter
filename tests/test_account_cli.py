@@ -22,6 +22,7 @@ def test_account_command_without_args_shows_help() -> None:
     assert "login" in result.stdout
     assert "balance" in result.stdout
     assert "transactions" in result.stdout
+    assert "salary" in result.stdout
 
 
 def test_account_update_succeeds_with_item_id_argument(
@@ -677,6 +678,280 @@ def test_account_goal_propagates_config_error(
     assert "Config file is not valid TOML" in output
 
 
+def test_account_salary_set_updates_config(tmp_path: Path, env) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "salary", "--set", "4322.75"],
+        env=env(),
+    )
+    assert result.exit_code == 0
+    assert "Set salary = 4322.75" in result.stdout
+
+    get_result = runner.invoke(app, ["config", "get", "salary"], env=env())
+    assert get_result.exit_code == 0
+    assert "salary = 4322.75 (source: file)" in get_result.stdout
+
+
+def test_account_salary_rejects_conflicting_options(tmp_path: Path, env) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "salary", "--sync", "--set", "4300"],
+        env=env(),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Options --sync and --set are mutually exclusive." in output
+
+
+def test_account_salary_requires_sync_or_set_option(tmp_path: Path, env) -> None:
+    result = runner.invoke(
+        app,
+        ["account", "salary"],
+        env=env(),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Provide one of --sync or --set." in output
+
+
+def test_account_salary_sync_sets_salary_when_single_match_found(
+    tmp_path: Path, env, monkeypatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency=ISO4217("BRL"),
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            account={"salary_filters": {"category": "Transfer", "amount": [">=4300"]}},
+        )
+
+    def fake_current_month_date_range(
+        today: datetime.date | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-02-01", "2026-02-12")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        return [
+            TransactionRow(
+                date="2026-02-05",
+                description="Monthly salary",
+                amount=Decimal("4322.44"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-06",
+                description="Groceries",
+                amount=Decimal("150.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.commands.account.validators.current_month_date_range",
+        fake_current_month_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+
+    result = runner.invoke(app, ["account", "salary", "--sync"], env=env())
+
+    assert result.exit_code == 0
+    assert observed["item_id"] is None
+    assert observed["date_from"] == "2026-02-01"
+    assert observed["date_to"] == "2026-02-12"
+    assert "Set salary = 4322.44" in result.stdout
+
+
+def test_account_salary_sync_prompts_selection_when_multiple_matches_found(
+    tmp_path: Path, env, monkeypatch
+) -> None:
+    observed: dict[str, str] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency=ISO4217("BRL"),
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            account={"salary_filters": {"category": "Transfer", "amount": []}},
+        )
+
+    def fake_current_month_date_range(
+        today: datetime.date | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-02-01", "2026-02-12")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-02-05",
+                description="Salary 1",
+                amount=Decimal("4300.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-06",
+                description="Salary 2",
+                amount=Decimal("4380.12"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Savings",
+                account_type="BANK",
+            ),
+        ]
+
+    def fake_set_user_config(key: str, value: str) -> tuple[str, str]:
+        observed["key"] = key
+        observed["value"] = value
+        return key, value
+
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.commands.account.validators.current_month_date_range",
+        fake_current_month_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+    monkeypatch.setattr("arcter.commands.account.set_user_config", fake_set_user_config)
+
+    result = runner.invoke(
+        app,
+        ["account", "salary", "--sync"],
+        env=env(),
+        input="2\n",
+    )
+
+    assert result.exit_code == 0
+    assert observed["key"] == "salary"
+    assert observed["value"] == "4380.12"
+    assert "Multiple transactions matched salary filters." in result.stdout
+    assert "Salary 1" in result.stdout
+    assert "Salary 2" in result.stdout
+    assert "Set salary = 4380.12" in result.stdout
+
+
+def test_account_salary_sync_shows_debug_tips_and_fallback_selection_when_no_match(
+    tmp_path: Path, env, monkeypatch
+) -> None:
+    observed: dict[str, str] = {}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency=ISO4217("BRL"),
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            account={"salary_filters": {"category": "Salary", "amount": [">=10000"]}},
+        )
+
+    def fake_current_month_date_range(
+        today: datetime.date | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-02-01", "2026-02-12")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-02-05",
+                description="Salary picked manually",
+                amount=Decimal("4322.44"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-02-06",
+                description="Groceries",
+                amount=Decimal("120.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    def fake_set_user_config(key: str, value: str) -> tuple[str, str]:
+        observed["key"] = key
+        observed["value"] = value
+        return key, value
+
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.commands.account.validators.current_month_date_range",
+        fake_current_month_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+    monkeypatch.setattr("arcter.commands.account.set_user_config", fake_set_user_config)
+
+    result = runner.invoke(
+        app,
+        ["account", "salary", "--sync"],
+        env=env(),
+        input="1\n",
+    )
+
+    assert result.exit_code == 0
+    assert observed["key"] == "salary"
+    assert observed["value"] == "4322.44"
+    assert "No transaction matched the configured salary filters." in result.stdout
+    assert "Tips:" in result.stdout
+    assert "Select a transaction from the current month to set salary:" in result.stdout
+    assert "Set salary = 4322.44" in result.stdout
+
+
 def test_account_credit_shows_detailed_credit_card_output(
     tmp_path: Path, env, default_config, monkeypatch, credit_card_row_factory
 ) -> None:
@@ -962,6 +1237,165 @@ def test_account_transactions_happy_path_shows_table(
     assert "PENDING" in result.stdout
     assert "Showing 3 of 3 transactions." in result.stdout
     assert "TOTAL: +1,250.00" in result.stdout
+
+
+def test_account_transactions_silently_syncs_salary_when_single_match_found(
+    tmp_path: Path, env, monkeypatch
+) -> None:
+    observed: dict[str, object] = {"set_calls": []}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency=ISO4217("BRL"),
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            account={"salary_filters": {"category": "Transfer", "amount": [">=4300"]}},
+            credit_cards=CreditCardsConfig(invoice_due_day=30),
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        observed["due_day"] = invoice_due_day
+        return ("2026-01-30", "2026-02-28")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        observed["item_id"] = item_id
+        observed["date_from"] = date_from
+        observed["date_to"] = date_to
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary",
+                amount=Decimal("4322.44"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-14",
+                description="Groceries",
+                amount=Decimal("200.00"),
+                currency_code="BRL",
+                type="DEBIT",
+                status="POSTED",
+                category="Food",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    def fake_set_user_config(key: str, value: str) -> tuple[str, str]:
+        set_calls = observed["set_calls"]
+        assert isinstance(set_calls, list)
+        set_calls.append((key, value))
+        return key, value
+
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
+        fake_derive_invoice_cycle_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+    monkeypatch.setattr("arcter.commands.account.set_user_config", fake_set_user_config)
+
+    result = runner.invoke(app, ["account", "transactions"], env=env())
+
+    assert result.exit_code == 0
+    assert observed["due_day"] == 30
+    assert observed["date_from"] == "2026-01-30"
+    assert observed["date_to"] == "2026-02-28"
+    assert observed["set_calls"] == [("salary", "4322.44")]
+    assert "Set salary =" not in result.stdout
+    assert "Showing 2 of 2 transactions." in result.stdout
+
+
+def test_account_transactions_does_not_sync_salary_when_match_is_not_unique(
+    tmp_path: Path, env, monkeypatch
+) -> None:
+    observed: dict[str, int] = {"set_calls": 0}
+
+    def fake_load_config() -> Config:
+        return Config(
+            currency=ISO4217("BRL"),
+            salary=Decimal("200.00"),
+            savings_goal=Decimal("500.00"),
+            account={"salary_filters": {"category": "Transfer", "amount": []}},
+            credit_cards=CreditCardsConfig(invoice_due_day=30),
+        )
+
+    def fake_derive_invoice_cycle_date_range(
+        invoice_due_day: int,
+        reference_date: object | None = None,
+    ) -> tuple[str, str]:
+        return ("2026-01-30", "2026-02-28")
+
+    def fake_list_item_transactions_with_env(
+        item_id: str | None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        account_type_filter: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> list[TransactionRow]:
+        return [
+            TransactionRow(
+                date="2026-01-15",
+                description="Salary 1",
+                amount=Decimal("4322.44"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+            TransactionRow(
+                date="2026-01-16",
+                description="Salary 2",
+                amount=Decimal("4380.00"),
+                currency_code="BRL",
+                type="CREDIT",
+                status="POSTED",
+                category="Transfer",
+                account_name="Checking",
+                account_type="BANK",
+            ),
+        ]
+
+    def fake_set_user_config(key: str, value: str) -> tuple[str, str]:
+        observed["set_calls"] += 1
+        return key, value
+
+    monkeypatch.setattr("arcter.commands.account.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "arcter.commands.account.validators.derive_invoice_cycle_date_range",
+        fake_derive_invoice_cycle_date_range,
+    )
+    monkeypatch.setattr(
+        "arcter.commands.account.pluggy.list_item_transactions_with_env",
+        fake_list_item_transactions_with_env,
+    )
+    monkeypatch.setattr("arcter.commands.account.set_user_config", fake_set_user_config)
+
+    result = runner.invoke(app, ["account", "transactions"], env=env())
+
+    assert result.exit_code == 0
+    assert observed["set_calls"] == 0
+    assert "Set salary =" not in result.stdout
+    assert "Showing 2 of 2 transactions." in result.stdout
 
 
 def test_account_transactions_passes_date_filter_options(

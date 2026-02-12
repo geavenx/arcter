@@ -55,6 +55,8 @@ def test_unknown_key_is_rejected_at_parse_time(tmp_path: Path, env) -> None:
     assert "salary" in lowered_output
     assert "currency" in lowered_output
     assert "savings_goal" in lowered_output
+    assert "account.salary_filters.category" in lowered_output
+    assert "account.salary_filters.amount" in lowered_output
     assert "credit_cards.invoice_due_day" in lowered_output
     assert "credit_cards.excluded_categories" in lowered_output
     assert "pluggy.item_id" in lowered_output
@@ -102,6 +104,9 @@ def test_list_supports_json_and_toml_formats(tmp_path: Path, env) -> None:
 
     assert toml_result.exit_code == 0
     assert "salary = 123.45" in toml_result.stdout
+    assert "[account.salary_filters]" in toml_result.stdout
+    assert 'category = ""' in toml_result.stdout
+    assert "amount = []" in toml_result.stdout
     assert "[credit_cards]" in toml_result.stdout
     assert "invoice_due_day = 30" in toml_result.stdout
     assert "excluded_categories = []" in toml_result.stdout
@@ -115,16 +120,18 @@ def test_set_and_unset_help_include_valid_keys() -> None:
     assert "salary" in set_help.stdout.lower()
     assert "currency" in set_help.stdout.lower()
     assert "savings_goal" in set_help.stdout.lower()
+    assert "account.salary_filters" in set_help.stdout.lower()
     assert "invoice_due_day" in set_help.stdout.lower()
-    assert "excluded_categorie" in set_help.stdout.lower()
+    assert "excluded_cat" in set_help.stdout.lower()
     assert "pluggy.item_id" in set_help.stdout.lower()
 
     assert unset_help.exit_code == 0
     assert "salary" in unset_help.stdout.lower()
     assert "currency" in unset_help.stdout.lower()
     assert "savings_goal" in unset_help.stdout.lower()
+    assert "account.salary_filters" in unset_help.stdout.lower()
     assert "invoice_due_day" in unset_help.stdout.lower()
-    assert "excluded_categorie" in unset_help.stdout.lower()
+    assert "excluded_cat" in unset_help.stdout.lower()
     assert "pluggy.item_id" in unset_help.stdout.lower()
 
 
@@ -219,6 +226,83 @@ def test_set_excluded_categories_writes_nested_credit_cards_table(
         'credit_cards.excluded_categories = ["Transfer", "Shopping"] '
         "(source: file)" in get_result.stdout
     )
+
+
+def test_set_salary_filters_writes_nested_account_table(tmp_path: Path, env) -> None:
+    set_category_result = runner.invoke(
+        app,
+        ["config", "set", "account.salary_filters.category", "Transfer"],
+        env=env(),
+    )
+    assert set_category_result.exit_code == 0
+    assert (
+        "Set account.salary_filters.category = Transfer" in set_category_result.stdout
+    )
+
+    first_amount_result = runner.invoke(
+        app,
+        ["config", "set", "account.salary_filters.amount", ">=4300"],
+        env=env(),
+    )
+    assert first_amount_result.exit_code == 0
+    assert (
+        'Set account.salary_filters.amount = [">=4300"]' in first_amount_result.stdout
+    )
+
+    second_amount_result = runner.invoke(
+        app,
+        ["config", "set", "account.salary_filters.amount", "<=4380"],
+        env=env(),
+    )
+    assert second_amount_result.exit_code == 0
+    assert (
+        'Set account.salary_filters.amount = [">=4300", "<=4380"]'
+        in second_amount_result.stdout
+    )
+
+    config_file = tmp_path / "arcter" / "config.toml"
+    content = config_file.read_text(encoding="utf-8")
+    assert "[account.salary_filters]" in content
+    assert 'category = "Transfer"' in content
+    assert "amount = [" in content
+    assert '">=4300"' in content
+    assert '"<=4380"' in content
+
+    get_category_result = runner.invoke(
+        app,
+        ["config", "get", "account.salary_filters.category"],
+        env=env(),
+    )
+    assert get_category_result.exit_code == 0
+    assert (
+        "account.salary_filters.category = Transfer (source: file)"
+        in get_category_result.stdout
+    )
+
+    get_amount_result = runner.invoke(
+        app,
+        ["config", "get", "account.salary_filters.amount"],
+        env=env(),
+    )
+    assert get_amount_result.exit_code == 0
+    assert (
+        'account.salary_filters.amount = [">=4300", "<=4380"] (source: file)'
+        in get_amount_result.stdout
+    )
+
+
+def test_set_salary_filter_amount_rejects_invalid_expression(
+    tmp_path: Path, env
+) -> None:
+    result = runner.invoke(
+        app,
+        ["config", "set", "account.salary_filters.amount", "4300-ish"],
+        env=env(),
+    )
+    output = f"{result.stdout}{result.stderr}"
+
+    assert result.exit_code == 1
+    assert "Invalid salary amount filter expression." in output
 
 
 def test_list_shows_default_invoice_due_day(tmp_path: Path, env) -> None:

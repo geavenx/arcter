@@ -5,7 +5,7 @@ from typing import NoReturn
 import typer
 
 from arcter import credentials, formatters, pluggy, validators
-from arcter.config import ConfigError, load_config, set_user_config
+from arcter.config import Config, ConfigError, load_config, set_user_config
 
 account_app = typer.Typer(
     help="Manage external account integrations.",
@@ -29,6 +29,184 @@ class TransactionOutputFormat(str, Enum):
 def _exit_with_error(exc: Exception) -> NoReturn:
     typer.secho(str(exc), fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1)
+
+
+def _salary_filter_parts(config: Config) -> tuple[str, list[str]]:
+    category_filter = config.account.salary_filters.category.strip()
+    amount_filters = list(config.account.salary_filters.amount)
+    return category_filter, amount_filters
+
+
+def _salary_filters_configured(config: Config) -> bool:
+    category_filter, amount_filters = _salary_filter_parts(config)
+    return bool(category_filter) or bool(amount_filters)
+
+
+def _filter_salary_transactions(
+    rows: list[pluggy.TransactionRow],
+    config: Config,
+) -> list[pluggy.TransactionRow]:
+    category_filter, amount_filters = _salary_filter_parts(config)
+    normalized_category_filter = category_filter.casefold()
+
+    filtered_rows: list[pluggy.TransactionRow] = []
+    for row in rows:
+        row_category = (
+            row.category.strip().casefold()
+            if isinstance(row.category, str) and row.category.strip()
+            else ""
+        )
+        if normalized_category_filter and row_category != normalized_category_filter:
+            continue
+
+        if amount_filters and not all(
+            validators.matches_salary_amount_filter(row.amount, expression)
+            for expression in amount_filters
+        ):
+            continue
+
+        filtered_rows.append(row)
+
+    return filtered_rows
+
+
+def _set_salary_from_transaction(
+    transaction: pluggy.TransactionRow,
+    announce: bool = True,
+) -> str:
+    normalized_amount = abs(transaction.amount).quantize(Decimal("0.01"))
+    _, rendered_salary = set_user_config("salary", str(normalized_amount))
+    if announce:
+        typer.echo(f"Set salary = {rendered_salary}")
+    return rendered_salary
+
+
+def _print_salary_transaction_options(rows: list[pluggy.TransactionRow]) -> None:
+    for index, row in enumerate(rows, start=1):
+        amount_label = formatters.format_currency_amount_grouped(
+            row.currency_code, abs(row.amount)
+        )
+        category_label = row.category if row.category else "Uncategorized"
+        typer.echo(
+            f"{index}. {row.date} | {amount_label} | {row.account_name} | "
+            f"{category_label} | {row.description}"
+        )
+
+
+def _prompt_salary_transaction_choice(
+    rows: list[pluggy.TransactionRow],
+    title: str,
+) -> pluggy.TransactionRow | None:
+    typer.echo(title)
+    typer.echo("")
+    _print_salary_transaction_options(rows)
+    typer.echo("")
+    typer.echo("Type the transaction number to set salary, or press Enter to cancel.")
+
+    while True:
+        selected = typer.prompt("Selection", default="", show_default=False).strip()
+        if not selected:
+            return None
+
+        try:
+            selected_index = int(selected)
+        except ValueError:
+            typer.secho(
+                "Invalid selection. Enter a number from the list, or press Enter to cancel.",
+                fg=typer.colors.YELLOW,
+            )
+            continue
+
+        if 1 <= selected_index <= len(rows):
+            return rows[selected_index - 1]
+
+        typer.secho(
+            "Invalid selection. Enter a number from the list, or press Enter to cancel.",
+            fg=typer.colors.YELLOW,
+        )
+
+
+def _print_salary_filter_debug_tips(config: Config) -> None:
+    category_filter, amount_filters = _salary_filter_parts(config)
+
+    typer.secho(
+        "No transaction matched the configured salary filters.",
+        fg=typer.colors.YELLOW,
+    )
+    typer.echo("Configured filters:")
+    typer.echo(f"- account.salary_filters.category: {category_filter or '<not set>'}")
+    typer.echo(
+        f"- account.salary_filters.amount: {amount_filters if amount_filters else '<not set>'}"
+    )
+    typer.echo("")
+    typer.echo("Tips:")
+    typer.echo(
+        '- Use `arcter config set account.salary_filters.category "Transfer"` '
+        "to match one category."
+    )
+    typer.echo(
+        '- Add amount filters like `arcter config set account.salary_filters.amount ">=4300"` '
+        'and `arcter config set account.salary_filters.amount "<=4380"`.'
+    )
+    typer.echo(
+        "- You can inspect this period with `arcter account transactions --output json`."
+    )
+
+
+def _sync_salary_silently_if_single_match(
+    rows: list[pluggy.TransactionRow],
+    config: Config,
+) -> None:
+    if not _salary_filters_configured(config):
+        return
+
+    candidates = _filter_salary_transactions(rows, config)
+    if len(candidates) != 1:
+        return
+
+    _set_salary_from_transaction(candidates[0], announce=False)
+
+
+def _sync_salary_with_filters(item_id: str | None, config: Config) -> None:
+    current_month_from, current_month_to = validators.current_month_date_range()
+    rows = pluggy.list_item_transactions_with_env(
+        item_id,
+        date_from=current_month_from,
+        date_to=current_month_to,
+    )
+
+    if not rows:
+        typer.echo("No transactions found in the current month.")
+        return
+
+    candidates = _filter_salary_transactions(rows, config)
+    if len(candidates) == 1:
+        _set_salary_from_transaction(candidates[0], announce=True)
+        return
+
+    if len(candidates) > 1:
+        selected = _prompt_salary_transaction_choice(
+            candidates,
+            "Multiple transactions matched salary filters. Choose one:",
+        )
+        if selected is None:
+            typer.echo("Salary sync cancelled.")
+            return
+
+        _set_salary_from_transaction(selected, announce=True)
+        return
+
+    _print_salary_filter_debug_tips(config)
+    typer.echo("")
+    fallback_selection = _prompt_salary_transaction_choice(
+        rows,
+        "Select a transaction from the current month to set salary:",
+    )
+    if fallback_selection is None:
+        typer.echo("Salary sync cancelled.")
+        return
+
+    _set_salary_from_transaction(fallback_selection, announce=True)
 
 
 @account_app.command("login")
@@ -290,6 +468,56 @@ def account_goal(
         typer.echo(f"  Estimated:  ~{estimated_months} months to reach goal")
 
 
+@account_app.command("salary")
+def account_salary(
+    item_id: str | None = typer.Argument(
+        None,
+        help="Pluggy item ID. Falls back to PLUGGY_ITEM_ID if omitted.",
+    ),
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="Sync salary from Pluggy transactions using configured salary filters.",
+    ),
+    set_amount: str | None = typer.Option(
+        None,
+        "--set",
+        help="Set salary manually.",
+    ),
+) -> None:
+    """Manage salary configuration."""
+    if sync and set_amount is not None:
+        typer.secho(
+            "Options --sync and --set are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if not sync and set_amount is None:
+        typer.secho(
+            "Provide one of --sync or --set.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if set_amount is not None:
+        try:
+            _normalized_key, rendered_salary = set_user_config("salary", set_amount)
+        except ConfigError as exc:
+            _exit_with_error(exc)
+
+        typer.echo(f"Set salary = {rendered_salary}")
+        return
+
+    try:
+        config = load_config()
+        _sync_salary_with_filters(item_id, config)
+    except (ConfigError, pluggy.PluggyError) as exc:
+        _exit_with_error(exc)
+
+
 @account_app.command("transactions")
 def account_transactions(
     item_id: str | None = typer.Argument(
@@ -377,6 +605,11 @@ def account_transactions(
         )
     except pluggy.PluggyError as exc:
         _exit_with_error(exc)
+
+    try:
+        _sync_salary_silently_if_single_match(rows, config)
+    except (ConfigError, ValueError):
+        pass
 
     if normalized_transaction_type is not None:
         rows = [
